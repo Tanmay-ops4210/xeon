@@ -1,144 +1,107 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
+import { User, Session } from '@supabase/supabase-js';
 
-// Mock User Interface
-export interface DummyUser {
+// Define the shape of the user profile from your database
+interface UserProfile {
   id: string;
-  email: string;
-  name?: string;
-  full_name?: string;
+  username: string;
+  avatar_url: string;
   role: 'attendee' | 'organizer' | 'admin';
-  company?: string;
-  avatar_url?: string;
-  plan: string;
-  created_at: string;
-  updated_at: string;
 }
 
+// Define the shape of the context state
 interface AuthContextType {
-  user: DummyUser | null;
-  profile: DummyUser | null;
-  session: any | null;
-  loading: boolean;
+  user: User | null;
+  profile: UserProfile | null;
+  session: Session | null;
   isAuthenticated: boolean;
-  login: (email: string, password: string, role?: 'attendee' | 'organizer' | 'admin') => Promise<void>;
-  register: (email: string, password: string, name: string, role: 'attendee' | 'organizer' | 'admin', company?: string) => Promise<void>;
+  loading: boolean;
   logout: () => Promise<void>;
-  resetPassword: (email: string) => Promise<void>;
-  updatePassword: (newPassword: string) => Promise<void>;
-  updateProfile: (updates: Partial<DummyUser>) => Promise<void>;
 }
 
+// Create the context
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-};
-
-interface AuthProviderProps {
-  children: ReactNode;
-}
-
-export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
-  const [user, setUser] = useState<DummyUser | null>(null);
-  const [profile, setProfile] = useState<DummyUser | null>(null);
-  const [session, setSession] = useState<any | null>(null);
+// The AuthProvider component that wraps your app
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Mock initialization - no backend
-    setLoading(false);
+    const getInitialSession = async () => {
+      // Get the current session from Supabase
+      const { data: { session } } = await supabase.auth.getSession();
+      setSession(session);
+      setUser(session?.user ?? null);
+
+      if (session?.user) {
+        // If a user is logged in, fetch their profile from the 'profiles' table
+        const { data: userProfile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+        setProfile(userProfile);
+      }
+      // IMPORTANT: Set loading to false only after all checks are complete
+      setLoading(false);
+    };
+
+    getInitialSession();
+
+    // Listen for changes in authentication state (user logs in or out)
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
+        setLoading(true);
+        setSession(session);
+        setUser(session?.user ?? null);
+
+        if (session?.user) {
+          // If a new session is created, fetch the profile again
+          const { data: userProfile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+          setProfile(userProfile);
+        } else {
+          // If the user logs out, clear the profile
+          setProfile(null);
+        }
+        setLoading(false);
+      }
+    );
+
+    // Cleanup the listener when the component is no longer on screen
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
   }, []);
 
-  const login = async (email: string, password: string, role?: 'attendee' | 'organizer' | 'admin') => {
-    // Mock login - always succeeds for demo
-    const mockUser: DummyUser = {
-      id: `user_${Date.now()}`,
-      email,
-      name: email.split('@')[0],
-      full_name: email.split('@')[0],
-      role: role || 'attendee',
-      plan: 'free',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    };
-
-    setUser(mockUser);
-    setProfile(mockUser);
-    setSession({ user: mockUser });
-  };
-
-  const register = async (
-    email: string, 
-    password: string, 
-    name: string, 
-    role: 'attendee' | 'organizer' | 'admin', 
-    company?: string
-  ) => {
-    // Mock registration - always succeeds for demo
-    const mockUser: DummyUser = {
-      id: `user_${Date.now()}`,
-      email,
-      name,
-      full_name: name,
-      role,
-      company,
-      plan: 'free',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    };
-
-    setUser(mockUser);
-    setProfile(mockUser);
-    setSession({ user: mockUser });
-  };
-
   const logout = async () => {
-    // Mock logout
-    setUser(null);
-    setProfile(null);
-    setSession(null);
-  };
-
-  const resetPassword = async (email: string) => {
-    // Mock password reset - always succeeds for demo
-    console.log(`Password reset email would be sent to: ${email}`);
-  };
-
-  const updatePassword = async (newPassword: string) => {
-    // Mock password update
-    console.log('Password would be updated');
-  };
-
-  const updateProfile = async (updates: Partial<DummyUser>) => {
-    // Mock profile update
-    if (user && profile) {
-      const updatedProfile = { ...profile, ...updates };
-      setProfile(updatedProfile);
-      setUser(updatedProfile);
-    }
+    await supabase.auth.signOut();
   };
 
   const value = {
     user,
     profile,
     session,
+    isAuthenticated: !!user,
     loading,
-    isAuthenticated: !!user && !!profile,
-    login,
-    register,
     logout,
-    resetPassword,
-    updatePassword,
-    updateProfile,
   };
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+};
+
+// Custom hook to easily use the auth context in any component
+export const useAuth = (): AuthContextType => {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
 };
