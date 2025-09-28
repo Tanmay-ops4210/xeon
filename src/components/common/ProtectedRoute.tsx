@@ -6,12 +6,14 @@ import { Loader2 } from 'lucide-react';
 interface ProtectedRouteProps {
   children: React.ReactNode;
   requiredRole?: 'attendee' | 'organizer' | 'admin';
+  allowedRoles?: string[];
   fallbackPath?: string;
 }
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ 
   children, 
   requiredRole, 
+  allowedRoles,
   fallbackPath = '/login' 
 }) => {
   const { user, isAuthenticated, loading } = useAuth();
@@ -33,7 +35,13 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     return <Navigate to={fallbackPath} state={{ from: location }} replace />;
   }
 
+  // Check role-based access
   if (requiredRole && user?.role !== requiredRole) {
+    // Redirect to unauthorized page or home
+    return <Navigate to="/unauthorized" replace />;
+  }
+
+  if (allowedRoles && allowedRoles.length > 0 && user?.role && !allowedRoles.includes(user.role)) {
     // Redirect to unauthorized page or home
     return <Navigate to="/unauthorized" replace />;
   }

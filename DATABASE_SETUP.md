@@ -143,3 +143,4 @@ After setting up the database:
 4. Configure additional RLS policies for user-specific data
 
 
+

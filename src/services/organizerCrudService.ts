@@ -669,21 +669,6 @@ class OrganizerCrudService {
     }
   }
 
-  async deleteEvent(eventId: string): Promise<{ success: boolean; error?: string }> {
-    try {
-      // Check organizer access
-      const accessCheck = await this.checkOrganizerAccess();
-      if (!accessCheck.success) {
-        return { success: false, error: accessCheck.error };
-      }
-
-      // Mock delete
-      await new Promise(resolve => setTimeout(resolve, 300));
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: 'Failed to delete event' };
-    }
-  }
 
   // Validate image file
   private validateImageFile(file: File): { isValid: boolean; error?: string } {

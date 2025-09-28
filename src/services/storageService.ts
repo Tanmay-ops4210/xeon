@@ -10,6 +10,7 @@ import {
   StorageBucket,
   FileTypeCategory
 } from '../types/storage';
+import { Event, Speaker } from '../types/eventManagement';
 
 // Default storage configurations for different use cases
 export const STORAGE_CONFIGS: Record<string, StorageConfig> = {
@@ -81,6 +82,24 @@ const generateUniqueFilename = (originalName: string, folder?: string): string =
 };
 
 /**
+ * Check if a storage bucket exists by trying to access it directly
+ */
+const checkBucketExists = async (bucketName: string): Promise<boolean> => {
+  try {
+    // Try to list files in the bucket - if it works, the bucket exists
+    const { error } = await supabase.storage
+      .from(bucketName)
+      .list('', { limit: 1 });
+    
+    // If there's no error, the bucket exists
+    return !error;
+  } catch (error) {
+    console.error('Error checking bucket existence:', error);
+    return false;
+  }
+};
+
+/**
  * Uploads a file to Supabase Storage
  */
 export const uploadFile = async (
@@ -89,6 +108,15 @@ export const uploadFile = async (
   customPath?: string
 ): Promise<UploadResult> => {
   try {
+    // Check if bucket exists
+    const bucketExists = await checkBucketExists(config.bucket);
+    if (!bucketExists) {
+      return {
+        success: false,
+        error: `Storage bucket '${config.bucket}' not found. Please set up storage buckets in Supabase dashboard. See STORAGE_SETUP.md for instructions.`
+      };
+    }
+
     // Validate file
     const validation = validateFile(file, config);
     if (!validation.isValid) {
@@ -111,6 +139,22 @@ export const uploadFile = async (
 
     if (error) {
       console.error('Storage upload error:', error);
+      
+      // Provide more helpful error messages
+      if (error.message.includes('Bucket not found')) {
+        return {
+          success: false,
+          error: `Storage bucket '${config.bucket}' not found. Please set up storage buckets in Supabase dashboard. See STORAGE_SETUP.md for instructions.`
+        };
+      }
+      
+      if (error.message.includes('Permission denied')) {
+        return {
+          success: false,
+          error: `Permission denied. Please check storage policies for bucket '${config.bucket}'. See STORAGE_SETUP.md for instructions.`
+        };
+      }
+      
       return {
         success: false,
         error: `Upload failed: ${error.message}`
@@ -204,6 +248,101 @@ export const listFiles = async (bucket: string, folder?: string): Promise<ListFi
 };
 
 /**
+ * Batch upload multiple files
+ */
+export const uploadMultipleFiles = async (
+  files: File[],
+  config: StorageConfig,
+  customPath?: string
+): Promise<{ results: UploadResult[]; successCount: number; errorCount: number }> => {
+  const results: UploadResult[] = [];
+  let successCount = 0;
+  let errorCount = 0;
+
+  for (const file of files) {
+    const result = await uploadFile(file, config, customPath);
+    results.push(result);
+    
+    if (result.success) {
+      successCount++;
+    } else {
+      errorCount++;
+    }
+  }
+
+  return { results, successCount, errorCount };
+};
+
+/**
+ * Upload event gallery images
+ */
+export const uploadEventGallery = async (
+  files: File[],
+  eventId: string
+): Promise<{ results: UploadResult[]; successCount: number; errorCount: number }> => {
+  const customPath = `events/${eventId}/gallery`;
+  return uploadMultipleFiles(files, STORAGE_CONFIGS.EVENT_IMAGES, customPath);
+};
+
+/**
+ * Upload speaker images
+ */
+export const uploadSpeakerImage = async (
+  file: File,
+  speakerId: string,
+  eventId?: string
+): Promise<UploadResult> => {
+  const customPath = eventId 
+    ? `events/${eventId}/speakers/${speakerId}/${file.name}`
+    : `speakers/${speakerId}/${file.name}`;
+  
+  return uploadFile(file, STORAGE_CONFIGS.PROFILE_PICTURES, customPath);
+};
+
+/**
+ * Upload organizer avatar
+ */
+export const uploadOrganizerAvatar = async (
+  file: File,
+  organizerId: string
+): Promise<UploadResult> => {
+  const customPath = `organizers/${organizerId}/avatar/${file.name}`;
+  return uploadFile(file, STORAGE_CONFIGS.PROFILE_PICTURES, customPath);
+};
+
+/**
+ * Get optimized image URL with transformations
+ */
+export const getOptimizedImageUrl = (
+  bucket: string,
+  path: string,
+  options?: {
+    width?: number;
+    height?: number;
+    quality?: number;
+    format?: 'webp' | 'jpeg' | 'png';
+  }
+): string => {
+  const { data } = supabase.storage
+    .from(bucket)
+    .getPublicUrl(path);
+
+  if (!options) {
+    return data.publicUrl;
+  }
+
+  // Add transformation parameters
+  const params = new URLSearchParams();
+  if (options.width) params.append('width', options.width.toString());
+  if (options.height) params.append('height', options.height.toString());
+  if (options.quality) params.append('quality', options.quality.toString());
+  if (options.format) params.append('format', options.format);
+
+  const separator = data.publicUrl.includes('?') ? '&' : '?';
+  return `${data.publicUrl}${separator}${params.toString()}`;
+};
+
+/**
  * Convenience methods for common upload scenarios
  */
 export const storageService: {
@@ -211,12 +350,17 @@ export const storageService: {
   uploadProfilePicture: (file: File, userId: string) => Promise<UploadResult>;
   uploadBanner: (file: File, customPath?: string) => Promise<UploadResult>;
   uploadDocument: (file: File, customPath?: string) => Promise<UploadResult>;
+  uploadEventGallery: (files: File[], eventId: string) => Promise<{ results: UploadResult[]; successCount: number; errorCount: number }>;
+  uploadSpeakerImage: (file: File, speakerId: string, eventId?: string) => Promise<UploadResult>;
+  uploadOrganizerAvatar: (file: File, organizerId: string) => Promise<UploadResult>;
   deleteEventImage: (path: string) => Promise<UploadResult>;
   deleteProfilePicture: (path: string) => Promise<UploadResult>;
+  deleteEventGallery: (paths: string[]) => Promise<UploadResult[]>;
   getEventImageUrl: (path: string) => string;
   getProfilePictureUrl: (path: string) => string;
   getBannerUrl: (path: string) => string;
   getDocumentUrl: (path: string) => string;
+  getOptimizedImageUrl: (bucket: string, path: string, options?: { width?: number; height?: number; quality?: number; format?: 'webp' | 'jpeg' | 'png' }) => string;
 } = {
   /**
    * Upload event image
@@ -288,6 +432,48 @@ export const storageService: {
    */
   getDocumentUrl: (path: string): string => {
     return getPublicUrl(STORAGE_CONFIGS.DOCUMENTS.bucket, path);
+  },
+
+  /**
+   * Upload event gallery
+   */
+  uploadEventGallery: async (files: File[], eventId: string) => {
+    return uploadEventGallery(files, eventId);
+  },
+
+  /**
+   * Upload speaker image
+   */
+  uploadSpeakerImage: async (file: File, speakerId: string, eventId?: string) => {
+    return uploadSpeakerImage(file, speakerId, eventId);
+  },
+
+  /**
+   * Upload organizer avatar
+   */
+  uploadOrganizerAvatar: async (file: File, organizerId: string) => {
+    return uploadOrganizerAvatar(file, organizerId);
+  },
+
+  /**
+   * Delete event gallery images
+   */
+  deleteEventGallery: async (paths: string[]): Promise<UploadResult[]> => {
+    const results: UploadResult[] = [];
+    
+    for (const path of paths) {
+      const result = await deleteFile(STORAGE_CONFIGS.EVENT_IMAGES.bucket, path);
+      results.push(result);
+    }
+    
+    return results;
+  },
+
+  /**
+   * Get optimized image URL
+   */
+  getOptimizedImageUrl: (bucket: string, path: string, options?: { width?: number; height?: number; quality?: number; format?: 'webp' | 'jpeg' | 'png' }) => {
+    return getOptimizedImageUrl(bucket, path, options);
   }
 };
 

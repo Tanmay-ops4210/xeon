@@ -76,20 +76,6 @@ const LoadingFallback: React.FC = () => (
   </div>
 );
 
-// Protected Route Component
-const ProtectedRoute: React.FC<{ children: React.ReactElement; allowedRoles: string[] }> = ({ 
-  children, 
-  allowedRoles 
-}) => {
-  const { isAuthenticated, profile } = useAuth();
-  
-  if (!isAuthenticated) {
-    return <Navigate to="/" replace />;
-  }
-
-  const userRole = profile?.role || 'attendee';
-  return allowedRoles.includes(userRole) ? children : <Navigate to="/" replace />;
-};
 
 const AppContent: React.FC = () => {
   const { user, profile, isAuthenticated } = useAuth();
