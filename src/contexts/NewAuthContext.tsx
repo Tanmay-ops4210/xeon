@@ -1,16 +1,16 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase'; // Correct path from src/contexts to src/lib
 import { User, Session } from '@supabase/supabase-js';
 
-// Define the shape of the user profile to match your 'profiles' table
+// Define the user profile shape to match your 'profiles' database table
 interface UserProfile {
   id: string;
-  full_name: string; // Corrected from 'username' to match your database schema
+  full_name: string; // Corrected to match your database schema
   avatar_url: string;
   role: 'attendee' | 'organizer' | 'admin';
 }
 
-// Define the shape of all the functions and state in the context
+// Define all the functions and state values the context will provide
 interface AuthContextType {
   user: User | null;
   profile: UserProfile | null;
@@ -25,7 +25,7 @@ interface AuthContextType {
 // Create the context
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// The provider component that makes auth available to the whole app
+// The provider component that will wrap your app and provide auth state
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -33,14 +33,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Checks for an active session when the app loads
+    // Check for an active session when the application first loads
     const getInitialSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       setSession(session);
       setUser(session?.user ?? null);
 
       if (session?.user) {
-        // Fetches the user's profile if they are logged in
+        // If a user is logged in, fetch their profile data
         const { data: userProfile } = await supabase
           .from('profiles')
           .select('*')
@@ -53,7 +53,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     getInitialSession();
 
-    // Listens for login/logout events
+    // Listen for authentication events (login, logout)
     const { data: authListener } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         setLoading(true);
@@ -73,13 +73,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
     );
     
-    // Cleanup listener
+    // Clean up the listener
     return () => {
       authListener.subscription.unsubscribe();
     };
   }, []);
 
-  // --- ADDED REAL AUTH FUNCTIONS ---
+  // --- REAL AUTHENTICATION FUNCTIONS ---
 
   const login = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -91,8 +91,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       email,
       password,
       options: {
+        // Pass user metadata to be used by the database trigger
         data: {
-          full_name: fullName, // This data is used by the database trigger
+          full_name: fullName,
           role: role,
         },
       },
@@ -104,7 +105,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     await supabase.auth.signOut();
   };
 
-  // --- END ADDED FUNCTIONS ---
+  // --- END AUTHENTICATION FUNCTIONS ---
 
   const value = {
     user,
@@ -120,7 +121,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
-// Custom hook for easy access to the context
+// Custom hook for easy access to auth state in your components
 export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
   if (context === undefined) {
