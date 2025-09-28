@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '@/lib/supabase';
 import { User, Session } from '@supabase/supabase-js';
 
 // This interface defines the shape of your user profile data from the database
