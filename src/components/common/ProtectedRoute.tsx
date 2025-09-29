@@ -26,13 +26,34 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles,
   const location = useLocation();
 
   // Show a loading screen while checking if you're logged in
-  if (loading || !profile && isAuthenticated) {
+  if (loading || (isAuthenticated && !profile)) {
     return <FullPageLoader />;
   }
 
   // If you are not logged in, redirect to the home page
   if (!isAuthenticated) {
     return <Navigate to="/" state={{ from: location }} replace />;
+  }
+
+  // If user is authenticated but no profile exists, show error
+  if (isAuthenticated && !profile) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-gray-50">
+        <div className="text-center bg-white p-8 rounded-lg shadow-lg max-w-md">
+          <div className="text-red-500 text-6xl mb-4">⚠️</div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">Profile Not Found</h1>
+          <p className="text-gray-600 mb-6">
+            Your user profile could not be loaded. This might be a database issue.
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            className="bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700 transition-colors duration-200"
+          >
+            Reload Page
+          </button>
+        </div>
+      </div>
+    );
   }
 
   // Check if your role is allowed to see the page
