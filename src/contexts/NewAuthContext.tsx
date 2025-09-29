@@ -87,7 +87,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const register = async (email: string, password: string, fullName: string, role: 'attendee' | 'organizer' | 'admin') => {
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -98,7 +98,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         },
       },
     });
-    if (error) throw error;
+    
+    if (error) {
+      console.error('Registration error:', error);
+      throw new Error(error.message || 'Registration failed');
+    }
+    
+    // Log successful registration for debugging
+    console.log('Registration successful:', data);
   };
 
   const logout = async () => {

@@ -105,6 +105,9 @@ const UnifiedAuthModal: React.FC<AuthModalProps> = ({
       } else {
         await register(formData.email, formData.password, formData.name, selectedRole, formData.company);
         
+        // Show success message for registration
+        alert('Account created successfully! Please check your email to verify your account before signing in.');
+        
         // After registration, redirect to appropriate dashboard
         if (redirectTo) {
           setCurrentView(redirectTo as any);
@@ -125,7 +128,22 @@ const UnifiedAuthModal: React.FC<AuthModalProps> = ({
       onLoginSuccess({} as any);
       onClose();
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Authentication failed. Please try again.';
+      console.error('Auth error:', error);
+      let errorMessage = 'Authentication failed. Please try again.';
+      
+      if (error instanceof Error) {
+        // Handle specific Supabase errors
+        if (error.message.includes('Email not confirmed')) {
+          errorMessage = 'Please check your email and click the confirmation link before signing in.';
+        } else if (error.message.includes('Invalid login credentials')) {
+          errorMessage = 'Invalid email or password. Please check your credentials and try again.';
+        } else if (error.message.includes('User already registered')) {
+          errorMessage = 'An account with this email already exists. Please sign in instead.';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
       setErrors({ general: errorMessage });
     } finally {
       setIsLoading(false);
