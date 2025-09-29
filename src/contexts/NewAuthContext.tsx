@@ -20,6 +20,7 @@ interface AuthContextType {
   login: (email: string, password: string, role?: 'attendee' | 'organizer' | 'admin') => Promise<void>;
   register: (email: string, password: string, fullName: string, role: 'attendee' | 'organizer' | 'admin', company?: string) => Promise<void>;
   logout: () => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
 }
 
 // Create the context
@@ -43,96 +44,4 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         // If a user is logged in, fetch their profile data
         const { data: userProfile } = await supabase
           .from('user_profiles')
-          .select('*')
-          .eq('id', session.user.id)
-          .single();
-        setProfile(userProfile);
-      }
-      setLoading(false);
-    };
-
-    getInitialSession();
-
-    // Listen for authentication events (login, logout)
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        setLoading(true);
-        setSession(session);
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          const { data: userProfile } = await supabase
-            .from('user_profiles')
-            .select('*')
-            .eq('id', session.user.id)
-            .single();
-          setProfile(userProfile);
-        } else {
-          setProfile(null);
-        }
-        setLoading(false);
-      }
-    );
-    
-    // Clean up the listener
-    return () => {
-      authListener.subscription.unsubscribe();
-    };
-  }, []);
-
-  // --- REAL AUTHENTICATION FUNCTIONS ---
-
-  const login = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
-  };
-
-  const register = async (email: string, password: string, fullName: string, role: 'attendee' | 'organizer' | 'admin') => {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        // Pass user metadata to be used by the database trigger
-        data: {
-          full_name: fullName,
-          role: role,
-        },
-      },
-    });
-    
-    if (error) {
-      console.error('Registration error:', error);
-      throw new Error(error.message || 'Registration failed');
-    }
-    
-    // Log successful registration for debugging
-    console.log('Registration successful:', data);
-  };
-
-  const logout = async () => {
-    await supabase.auth.signOut();
-  };
-
-  // --- END AUTHENTICATION FUNCTIONS ---
-
-  const value = {
-    user,
-    profile,
-    session,
-    isAuthenticated: !!user,
-    loading,
-    login,
-    register,
-    logout,
-  };
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-};
-
-// Custom hook for easy access to auth state in your components
-export const useAuth = (): AuthContextType => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-};
+          .select('*

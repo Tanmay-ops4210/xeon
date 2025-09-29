@@ -105,8 +105,8 @@ const UnifiedAuthModal: React.FC<AuthModalProps> = ({
       } else {
         await register(formData.email, formData.password, formData.name, selectedRole, formData.company);
         
-        // Show success message for registration
-        alert('Account created successfully! Please check your email to verify your account before signing in.');
+        // Show success message for registration (no email verification needed)
+        alert('Account created successfully! You are now logged in.');
         
         // After registration, redirect to appropriate dashboard
         if (redirectTo) {
@@ -133,12 +133,14 @@ const UnifiedAuthModal: React.FC<AuthModalProps> = ({
       
       if (error instanceof Error) {
         // Handle specific Supabase errors
-        if (error.message.includes('Email not confirmed')) {
-          errorMessage = 'Please check your email and click the confirmation link before signing in.';
-        } else if (error.message.includes('Invalid login credentials')) {
+        if (error.message.includes('Invalid login credentials')) {
           errorMessage = 'Invalid email or password. Please check your credentials and try again.';
         } else if (error.message.includes('User already registered')) {
           errorMessage = 'An account with this email already exists. Please sign in instead.';
+        } else if (error.message.includes('Password')) {
+          errorMessage = 'Password must be at least 6 characters long.';
+        } else if (error.message.includes('Invalid email')) {
+          errorMessage = 'Please enter a valid email address.';
         } else {
           errorMessage = error.message;
         }
