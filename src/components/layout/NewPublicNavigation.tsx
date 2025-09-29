@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { Menu, X, Calendar, Users, Building, BookOpen, Info, Phone, User, LogOut, Award } from 'lucide-react';
 import { useApp } from '../../contexts/AppContext';
 import { useAuth } from '../../contexts/NewAuthContext';
-import UnifiedAuthModal from '../../auth/UnifiedAuthModal';
+import UnifiedAuthModal from '../../../auth/UnifiedAuthModal';
 
 const NewPublicNavigation: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
