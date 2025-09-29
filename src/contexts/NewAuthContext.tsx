@@ -45,8 +45,85 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const { data: userProfile } = await supabase
           .from('user_profiles')
           .select('*')
+          .eq('id', session.user.id)
+          .single();
+        
+        if (userProfile) {
+          setProfile(userProfile);
+        }
       }
+      
+      setLoading(false);
+    };
+
+    getInitialSession();
+
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+
+      if (session?.user) {
+        const { data: userProfile } = await supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+        
+        if (userProfile) {
+          setProfile(userProfile);
+        }
+      } else {
+        setProfile(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const login = async (email: string, password: string, role?: 'attendee' | 'organizer' | 'admin') => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+  };
+
+  const register = async (email: string, password: string, fullName: string, role: 'attendee' | 'organizer' | 'admin', company?: string) => {
+    const { error } = await supabase.auth.signUp({ email, password });
+    if (error) throw error;
+  };
+
+  const logout = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
+  };
+
+  const resetPassword = async (email: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email);
+    if (error) throw error;
+  };
+
+  const value = {
+    user,
+    profile,
+    session,
+    isAuthenticated: !!user,
+    loading,
+    login,
+    register,
+    logout,
+    resetPassword,
+  };
+
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+// Custom hook to use the auth context
+export const useAuth = (): AuthContextType => {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
     }
   }
-  )
-}
