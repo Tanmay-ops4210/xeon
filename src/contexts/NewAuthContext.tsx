@@ -45,3 +45,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const { data: userProfile } = await supabase
           .from('user_profiles')
           .select('*')
+      }
+    }
+  }
+  )
+}
