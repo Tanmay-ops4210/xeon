@@ -44,4 +44,4 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         // If a user is logged in, fetch their profile data
         const { data: userProfile } = await supabase
           .from('user_profiles')
-          .select('*
+          .select('*')
