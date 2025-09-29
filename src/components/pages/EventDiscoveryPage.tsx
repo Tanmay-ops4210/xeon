@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Search, Filter, Calendar, MapPin, Users, Star, ArrowRight } from 'lucide-react';
 import { useAuth } from '../../contexts/NewAuthContext';
 import LoginPromptOverlay from '../common/LoginPromptOverlay';
-import AuthModal from '../auth/AuthModal';
+import UnifiedAuthModal from '../auth/UnifiedAuthModal';
 
 const EventDiscoveryPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -479,9 +479,10 @@ const EventDiscoveryPage: React.FC = () => {
       />
 
       {/* Auth Modal */}
-      <AuthModal
+      <UnifiedAuthModal
         isOpen={showAuthModal}
         onClose={() => setShowAuthModal(false)}
+        onLoginSuccess={() => setShowAuthModal(false)}
       />
     </div>
   );
