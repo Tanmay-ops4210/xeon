@@ -42,7 +42,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (session?.user) {
         // If a user is logged in, fetch their profile data
         const { data: userProfile } = await supabase
-          .from('profiles')
+          .from('user_profiles')
           .select('*')
           .eq('id', session.user.id)
           .single();
@@ -61,7 +61,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setUser(session?.user ?? null);
         if (session?.user) {
           const { data: userProfile } = await supabase
-            .from('profiles')
+            .from('user_profiles')
             .select('*')
             .eq('id', session.user.id)
             .single();
