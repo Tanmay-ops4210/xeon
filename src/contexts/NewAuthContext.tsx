@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { supabase } from '@/lib/supabase'; // Correct path from src/contexts to src/lib
+import { supabase } from '../lib/supabase';
 import { User, Session } from '@supabase/supabase-js';
 
 // Define the user profile shape to match your 'profiles' database table
@@ -37,12 +37,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     // Check for an active session when the application first loads
     const getInitialSession = async () => {
       try {
+        console.log('Checking initial session...');
         const { data: { session } } = await supabase.auth.getSession();
+        console.log('Initial session:', session?.user?.id);
         setSession(session);
         setUser(session?.user ?? null);
 
         if (session?.user) {
           // If a user is logged in, fetch their profile data
+          console.log('Fetching user profile for:', session.user.id);
           const { data: userProfile, error: profileError } = await supabase
             .from('user_profiles')
             .select('*')
@@ -50,13 +53,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             .single();
           
           if (profileError) {
-            console.error('Error fetching user profile:', profileError);
+            console.error('Error fetching user profile:', profileError.message);
+            console.log('Profile error details:', profileError);
           }
           
           if (userProfile) {
+            console.log('User profile loaded:', userProfile);
             setProfile(userProfile);
           } else {
             console.warn('No user profile found for user:', session.user.id);
+            console.log('This might indicate a trigger or RLS issue');
           }
         }
       } catch (error) {
@@ -76,6 +82,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setUser(session?.user ?? null);
 
       if (session?.user) {
+        console.log('Auth state change - fetching profile for:', session.user.id);
+        
+        // If this is a new signup, wait a bit longer for the trigger
+        if (event === 'SIGNED_UP') {
+          console.log('New signup detected, waiting for profile creation...');
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+        
         const { data: userProfile, error: profileError } = await supabase
           .from('user_profiles')
           .select('*')
@@ -83,15 +97,52 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           .single();
         
         if (profileError) {
-          console.error('Error fetching user profile after auth change:', profileError);
+          console.error('Error fetching user profile after auth change:', profileError.message);
+          console.log('Profile error details:', profileError);
+          
+          // If profile doesn't exist and this is a signup, try to create it manually
+          if (event === 'SIGNED_UP' && profileError.code === 'PGRST116') {
+            console.log('Profile not found after signup, attempting manual creation...');
+            try {
+              const { data: newProfile, error: createError } = await supabase
+                .from('user_profiles')
+                .insert({
+                  id: session.user.id,
+                  email: session.user.email || '',
+                  full_name: session.user.user_metadata?.full_name || '',
+                  role: session.user.user_metadata?.role || 'attendee'
+                })
+                .select()
+                .single();
+              
+              if (createError) {
+                console.error('Manual profile creation failed:', createError);
+              } else {
+                console.log('Manual profile creation successful:', newProfile);
+                setProfile(newProfile);
+                
+                // Also create user role
+                await supabase
+                  .from('user_roles')
+                  .insert({
+                    user_id: session.user.id,
+                    role: session.user.user_metadata?.role || 'attendee'
+                  });
+              }
+            } catch (manualError) {
+              console.error('Manual profile creation error:', manualError);
+            }
+          }
         }
         
         if (userProfile) {
+          console.log('Profile loaded after auth change:', userProfile);
           setProfile(userProfile);
         } else {
           console.warn('No user profile found after auth change for user:', session.user.id);
         }
       } else {
+        console.log('No session, clearing profile');
         setProfile(null);
       }
     });
@@ -111,6 +162,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const register = async (email: string, password: string, fullName: string, role: 'attendee' | 'organizer' | 'admin', company?: string) => {
     try {
+      console.log('Starting registration process...', { email, fullName, role });
+      
       const { error } = await supabase.auth.signUp({ 
         email, 
         password,
@@ -122,7 +175,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           }
         }
       });
-      if (error) throw error;
+      
+      if (error) {
+        console.error('Supabase signup error:', error);
+        throw error;
+      }
+      
+      console.log('Registration successful, waiting for profile creation...');
+      
+      // Wait a moment for the trigger to create the profile
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
     } catch (error) {
       console.error('Registration error:', error);
       throw error;

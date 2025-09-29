@@ -84,6 +84,7 @@ const UnifiedAuthModal: React.FC<AuthModalProps> = ({
     
     try {
       if (isLoginMode) {
+        console.log('Attempting login for:', formData.email);
         await login(formData.email, formData.password, selectedRole);
         
         // Handle redirection after successful login
@@ -103,10 +104,32 @@ const UnifiedAuthModal: React.FC<AuthModalProps> = ({
           }
         }
       } else {
+        console.log('Attempting registration for:', formData.email, 'with role:', selectedRole);
         await register(formData.email, formData.password, formData.name, selectedRole, formData.company);
         
-        // Show success message for registration (no email verification needed)
-        alert('Account created successfully! You are now logged in.');
+        console.log('Registration completed, checking profile...');
+        
+        // Wait a moment for profile creation
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Check if profile was created
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: profile, error: profileError } = await supabase
+            .from('user_profiles')
+            .select('*')
+            .eq('id', user.id)
+            .single();
+          
+          if (profileError) {
+            console.error('Profile check failed:', profileError);
+            setErrors({ general: 'Account created but profile setup failed. Please try logging in.' });
+            return;
+          } else {
+            console.log('Profile verified:', profile);
+            alert('Account created successfully! You are now logged in.');
+          }
+        }
         
         // After registration, redirect to appropriate dashboard
         if (redirectTo) {
@@ -137,10 +160,14 @@ const UnifiedAuthModal: React.FC<AuthModalProps> = ({
           errorMessage = 'Invalid email or password. Please check your credentials and try again.';
         } else if (error.message.includes('User already registered')) {
           errorMessage = 'An account with this email already exists. Please sign in instead.';
+        } else if (error.message.includes('Email not confirmed')) {
+          errorMessage = 'Please check your email and click the confirmation link before signing in.';
         } else if (error.message.includes('Password')) {
           errorMessage = 'Password must be at least 6 characters long.';
         } else if (error.message.includes('Invalid email')) {
           errorMessage = 'Please enter a valid email address.';
+        } else if (error.message.includes('permission denied') || error.message.includes('RLS')) {
+          errorMessage = 'Database connection issue. Please try again or contact support.';
         } else {
           errorMessage = error.message;
         }
