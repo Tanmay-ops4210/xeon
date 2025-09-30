@@ -1,5 +1,5 @@
 import { Speaker, SpeakerListResponse } from '../types/speaker';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabaseConfig';
 
 // Mock speaker data - fallback when database is not available
 const mockSpeakers: Speaker[] = [

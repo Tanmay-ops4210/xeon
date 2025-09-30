@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabaseConfig';
 import { User, Session } from '@supabase/supabase-js';
 
 // Define the user profile shape to match your 'profiles' database table

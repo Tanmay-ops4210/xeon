@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { X, User, Mail, Lock, Eye, EyeOff, Building, Calendar } from 'lucide-react';
 import { useApp } from '../../contexts/AppContext';
 import { useAuth } from '../../contexts/NewAuthContext';
-import { supabase } from '../../lib/supabase';
+import { supabase } from '../../lib/supabaseConfig';
 
 interface AuthModalProps {
   isOpen: boolean;

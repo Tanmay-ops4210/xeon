@@ -1,39 +1,83 @@
+// Supabase configuration with hardcoded credentials
 import { createClient } from '@supabase/supabase-js'
 
-// Supabase configuration
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+// Hardcoded Supabase configuration
+const supabaseUrl = 'https://vjdsijuyzhhlofmlzexe.supabase.co'
+const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZqZHNpanV5emhobG9mbWx6ZXhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTU4NzcwNDQsImV4cCI6MjA3MTQ1MzA0NH0.T7pK7N0whtHSkXIXcttNFfyQMqtHlIQbVhYAe7s6UrM'
 
-// Validate environment variables
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('Missing Supabase environment variables:');
-  console.error('VITE_SUPABASE_URL:', supabaseUrl ? '✓ Set' : '✗ Missing');
-  console.error('VITE_SUPABASE_ANON_KEY:', supabaseAnonKey ? '✓ Set' : '✗ Missing');
-  throw new Error('Missing required Supabase environment variables. Please check your .env file or Vercel environment variables.');
-}
-
-// Create Supabase client
+// Create Supabase client with hardcoded credentials
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: false, // Disable OAuth URL detection
-    flowType: 'pkce', // Use PKCE flow for better security
-    debug: import.meta.env.DEV // Enable debug mode in development
+    detectSessionInUrl: false,
+    flowType: 'pkce',
+    debug: false
   }
 })
 
-// Log configuration in development
-if (import.meta.env.DEV) {
-  console.log('Supabase Configuration:');
-  console.log('URL:', supabaseUrl);
-  console.log('Key:', supabaseAnonKey ? `${supabaseAnonKey.substring(0, 20)}...` : 'Missing');
-}
+// Log configuration for debugging
+console.log('Supabase Configuration:');
+console.log('URL:', supabaseUrl);
+console.log('Key:', supabaseAnonKey ? `${supabaseAnonKey.substring(0, 20)}...` : 'Missing');
 
 // Database types (will be updated as we create tables)
 export interface Database {
   public: {
     Tables: {
+      user_profiles: {
+        Row: {
+          id: string
+          email: string
+          full_name?: string
+          avatar_url?: string
+          bio?: string
+          company?: string
+          job_title?: string
+          phone?: string
+          website?: string
+          location?: string
+          timezone: string
+          preferences: any
+          role: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id: string
+          email: string
+          full_name?: string
+          avatar_url?: string
+          bio?: string
+          company?: string
+          job_title?: string
+          phone?: string
+          website?: string
+          location?: string
+          timezone?: string
+          preferences?: any
+          role?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          email?: string
+          full_name?: string
+          avatar_url?: string
+          bio?: string
+          company?: string
+          job_title?: string
+          phone?: string
+          website?: string
+          location?: string
+          timezone?: string
+          preferences?: any
+          role?: string
+          created_at?: string
+          updated_at?: string
+        }
+      }
       events: {
         Row: {
           id: string
@@ -137,26 +181,6 @@ export interface Database {
           updated_at?: string
         }
       }
-      event_speakers: {
-        Row: {
-          id: string
-          event_id: string
-          speaker_id: string
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          event_id: string
-          speaker_id: string
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          event_id?: string
-          speaker_id?: string
-          created_at?: string
-        }
-      }
       blog_posts: {
         Row: {
           id: string
@@ -198,81 +222,6 @@ export interface Database {
           status?: 'draft' | 'published'
         }
       }
-      sponsors: {
-        Row: {
-          id: string
-          name: string
-          logo_url: string
-          website_url?: string
-          description?: string
-          tier: 'platinum' | 'gold' | 'silver' | 'bronze'
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          name: string
-          logo_url: string
-          website_url?: string
-          description?: string
-          tier: 'platinum' | 'gold' | 'silver' | 'bronze'
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          name?: string
-          logo_url?: string
-          website_url?: string
-          description?: string
-          tier?: 'platinum' | 'gold' | 'silver' | 'bronze'
-          created_at?: string
-          updated_at?: string
-        }
-      }
-      event_sponsors: {
-        Row: {
-          id: string
-          event_id: string
-          sponsor_id: string
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          event_id: string
-          sponsor_id: string
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          event_id?: string
-          sponsor_id?: string
-          created_at?: string
-        }
-      }
-      categories: {
-        Row: {
-          id: string
-          name: string
-          description?: string
-          color: string
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          name: string
-          description?: string
-          color: string
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          name?: string
-          description?: string
-          color?: string
-          created_at?: string
-        }
-      }
     }
     Views: {
       [_ in never]: never
@@ -286,6 +235,7 @@ export interface Database {
   }
 }
 
-// Typed Supabase client
-export const supabaseClient = createClient<Database>(supabaseUrl, supabaseAnonKey)
+// Export the typed client
+export const supabaseClient = createClient(supabaseUrl, supabaseAnonKey)
 
+export default supabase
