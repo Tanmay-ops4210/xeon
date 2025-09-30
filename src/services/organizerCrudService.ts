@@ -1,25 +1,6 @@
-// Mock interfaces for organizer service
-export interface OrganizerEvent {
-  id: string;
-  organizer_id: string;
-  title: string;
-  description?: string;
-  category: string;
-  event_date: string;
-  time: string;
-  end_time?: string;
-  venue: string;
-  capacity: number;
-  image_url?: string;
-  status: 'draft' | 'published' | 'ongoing' | 'completed' | 'cancelled';
-  visibility: 'public' | 'private' | 'unlisted';
-  created_at: string;
-  updated_at: string;
-  price?: number;
-  currency?: string;
-}
+import { supabase } from '../lib/supabaseConfig';
 
-// Add attendees property to OrganizerEvent interface
+// Interfaces for organizer service
 export interface OrganizerEvent {
   id: string;
   organizer_id: string;
@@ -40,6 +21,7 @@ export interface OrganizerEvent {
   price?: number;
   currency?: string;
 }
+
 export interface OrganizerTicketType {
   id: string;
   event_id: string;
@@ -112,9 +94,9 @@ export interface EventFormData {
   end_time?: string;
   venue: string;
   capacity: number;
-  image_url?: string; // This will be set after image upload
-  imageFile?: File; // File to be uploaded by backend
-  imagePreview?: string; // Preview URL for immediate UI feedback
+  image_url?: string;
+  imageFile?: File;
+  imagePreview?: string;
   visibility: 'public' | 'private' | 'unlisted';
 }
 
@@ -131,23 +113,6 @@ export interface TicketFormData {
   restrictions: string[];
 }
 
-export interface MarketingCampaign {
-  id: string;
-  event_id: string;
-  name: string;
-  type: 'email' | 'social' | 'sms' | 'push';
-  subject?: string;
-  content?: string;
-  audience?: string;
-  status: 'draft' | 'scheduled' | 'sent' | 'cancelled';
-  sent_date?: string;
-  open_rate: number;
-  click_rate: number;
-  created_at: string;
-}
-
-let mockEvents: OrganizerEvent[] = [];
-
 class OrganizerCrudService {
   private static instance: OrganizerCrudService;
   private eventListeners: ((events: OrganizerEvent[]) => void)[] = [];
@@ -159,7 +124,6 @@ class OrganizerCrudService {
     return OrganizerCrudService.instance;
   }
 
-  // Add event listener for real-time updates
   addEventListener(callback: (events: OrganizerEvent[]) => void) {
     this.eventListeners.push(callback);
   }
@@ -168,30 +132,79 @@ class OrganizerCrudService {
     this.eventListeners = this.eventListeners.filter(listener => listener !== callback);
   }
 
-  private notifyEventListeners() {
-    this.eventListeners.forEach(callback => callback([...mockEvents]));
+  private async notifyEventListeners(organizerId?: string) {
+    // Get authenticated user's ID if not provided
+    const { data: { user } } = await supabase.auth.getUser();
+    const userId = organizerId || user?.id;
+    
+    if (!userId) return;
+    
+    const result = await this.getMyEvents(userId);
+    if (result.success && result.events) {
+      this.eventListeners.forEach(callback => callback(result.events!));
+    }
   }
 
-  // Check if user is authenticated and has organizer role
   private async checkOrganizerAccess(): Promise<{ success: boolean; error?: string }> {
-    // Mock access check - always allow for demo
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return { success: false, error: 'Not authenticated' };
+    }
     return { success: true };
+  }
+
+  private validateImageFile(file: File): { isValid: boolean; error?: string } {
+    const maxSize = 5 * 1024 * 1024; // 5MB
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+
+    if (!allowedTypes.includes(file.type)) {
+      return { isValid: false, error: 'Invalid file type. Only JPEG, PNG, WebP, and GIF are allowed.' };
+    }
+
+    if (file.size > maxSize) {
+      return { isValid: false, error: 'File size exceeds 5MB limit.' };
+    }
+
+    return { isValid: true };
+  }
+
+  private async uploadImage(file: File, eventId?: string): Promise<{ success: boolean; url?: string; error?: string }> {
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${eventId || Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+      const filePath = `event-images/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('event-images')
+        .upload(filePath, file);
+
+      if (uploadError) {
+        console.error('Upload error:', uploadError);
+        return { success: false, error: uploadError.message };
+      }
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('event-images')
+        .getPublicUrl(filePath);
+
+      return { success: true, url: publicUrl };
+    } catch (error) {
+      console.error('Image upload error:', error);
+      return { success: false, error: 'Failed to upload image' };
+    }
   }
 
   async createEvent(eventData: EventFormData, organizerId: string): Promise<{ success: boolean; event?: OrganizerEvent; error?: string }> {
     try {
-      // Check organizer access
-      const accessCheck = await this.checkOrganizerAccess();
-      if (!accessCheck.success) {
-        return { success: false, error: accessCheck.error };
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        return { success: false, error: 'Not authenticated' };
       }
 
-      // Validate required fields
       if (!eventData.title || !eventData.venue || !eventData.event_date || !eventData.time) {
         return { success: false, error: 'Missing required fields: title, venue, date, and time are required' };
       }
 
-      // Validate image if provided
       if (eventData.imageFile) {
         const validation = this.validateImageFile(eventData.imageFile);
         if (!validation.isValid) {
@@ -199,7 +212,6 @@ class OrganizerCrudService {
         }
       }
 
-      // Upload image if provided
       let imageUrl = eventData.image_url;
       if (eventData.imageFile) {
         const uploadResult = await this.uploadImage(eventData.imageFile);
@@ -210,34 +222,51 @@ class OrganizerCrudService {
         }
       }
 
-      // Mock event creation
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
+      const { data, error } = await supabase
+        .from('events')
+        .insert({
+          organizer_id: user.id,
+          title: eventData.title,
+          description: eventData.description || '',
+          category: eventData.category || 'conference',
+          start_date: `${eventData.event_date}T${eventData.time}:00`,
+          end_date: eventData.end_time ? `${eventData.event_date}T${eventData.end_time}:00` : `${eventData.event_date}T${eventData.time}:00`,
+          location: eventData.venue,
+          venue_name: eventData.venue,
+          max_attendees: eventData.capacity,
+          image_url: imageUrl,
+          status: 'draft',
+          is_online: false,
+          price: 0
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Create event error:', error);
+        return { success: false, error: error.message };
+      }
+
       const newEvent: OrganizerEvent = {
-        id: `evt_${Date.now()}`,
-        organizer_id: organizerId,
-        title: eventData.title,
-        description: eventData.description,
-        category: eventData.category || 'conference',
-        event_date: eventData.event_date,
-        time: eventData.time,
-        end_time: eventData.end_time,
-        venue: eventData.venue,
-        capacity: eventData.capacity,
+        id: data.id,
+        organizer_id: data.organizer_id,
+        title: data.title,
+        description: data.description,
+        category: data.category,
+        event_date: data.start_date.split('T')[0],
+        time: data.start_date.split('T')[1].substring(0, 5),
+        end_time: data.end_date ? data.end_date.split('T')[1].substring(0, 5) : undefined,
+        venue: data.location,
+        capacity: data.max_attendees || 0,
         attendees: 0,
-        image_url: imageUrl,
-        status: 'draft',
-        visibility: eventData.visibility || 'public',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        image_url: data.image_url,
+        status: data.status,
+        visibility: 'public',
+        created_at: data.created_at,
+        updated_at: data.updated_at
       };
 
-      // Store the event in mock storage
-      mockEvents.push(newEvent);
-
-      // Notify listeners of the change
-      this.notifyEventListeners();
-
+      await this.notifyEventListeners(user.id);
       return { success: true, event: newEvent };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'An unexpected error occurred';
@@ -247,19 +276,47 @@ class OrganizerCrudService {
 
   async getMyEvents(organizerId: string): Promise<{ success: boolean; events?: OrganizerEvent[]; error?: string }> {
     try {
-      // Check organizer access
-      const accessCheck = await this.checkOrganizerAccess();
-      if (!accessCheck.success) {
-        return { success: false, error: accessCheck.error };
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        return { success: false, error: 'Not authenticated' };
       }
 
-      // Mock events fetch
-      await new Promise(resolve => setTimeout(resolve, 300));
-      
-      // Filter events by organizer
-      const organizerEvents = mockEvents.filter(event => event.organizer_id === organizerId);
-      
-      return { success: true, events: organizerEvents };
+      // Use authenticated user's ID, not the parameter
+      const { data, error } = await supabase
+        .from('events')
+        .select(`
+          *,
+          event_attendees(count)
+        `)
+        .eq('organizer_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Get events error:', error);
+        return { success: false, error: error.message };
+      }
+
+      const events: OrganizerEvent[] = (data || []).map((event: any) => ({
+        id: event.id,
+        organizer_id: event.organizer_id,
+        title: event.title,
+        description: event.description,
+        category: event.category,
+        event_date: event.start_date.split('T')[0],
+        time: event.start_date.split('T')[1].substring(0, 5),
+        end_time: event.end_date ? event.end_date.split('T')[1].substring(0, 5) : undefined,
+        venue: event.location || event.venue_name,
+        capacity: event.max_attendees || 0,
+        attendees: event.event_attendees?.[0]?.count || 0,
+        image_url: event.image_url,
+        status: event.status,
+        visibility: 'public',
+        created_at: event.created_at,
+        updated_at: event.updated_at,
+        price: event.price
+      }));
+
+      return { success: true, events };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'An unexpected error occurred';
       return { success: false, error: `Failed to fetch events: ${message}` };
@@ -268,20 +325,47 @@ class OrganizerCrudService {
 
   async getEventById(eventId: string): Promise<{ success: boolean; event?: OrganizerEvent; error?: string }> {
     try {
-      // Check organizer access
-      const accessCheck = await this.checkOrganizerAccess();
-      if (!accessCheck.success) {
-        return { success: false, error: accessCheck.error };
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        return { success: false, error: 'Not authenticated' };
       }
 
-      // Mock event fetch
-      await new Promise(resolve => setTimeout(resolve, 200));
-      
-      const event = mockEvents.find(event => event.id === eventId);
-      if (!event) {
+      // RLS-compatible query: filter by both event ID and organizer ID
+      const { data, error } = await supabase
+        .from('events')
+        .select('*')
+        .eq('id', eventId)
+        .eq('organizer_id', user.id)
+        .single();
+
+      if (error) {
+        console.error('Get event error:', error);
+        return { success: false, error: error.message };
+      }
+
+      if (!data) {
         return { success: false, error: 'Event not found' };
       }
-      
+
+      const event: OrganizerEvent = {
+        id: data.id,
+        organizer_id: data.organizer_id,
+        title: data.title,
+        description: data.description,
+        category: data.category,
+        event_date: data.start_date.split('T')[0],
+        time: data.start_date.split('T')[1].substring(0, 5),
+        end_time: data.end_date ? data.end_date.split('T')[1].substring(0, 5) : undefined,
+        venue: data.location || data.venue_name,
+        capacity: data.max_attendees || 0,
+        image_url: data.image_url,
+        status: data.status,
+        visibility: 'public',
+        created_at: data.created_at,
+        updated_at: data.updated_at,
+        price: data.price
+      };
+
       return { success: true, event };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'An unexpected error occurred';
@@ -291,13 +375,11 @@ class OrganizerCrudService {
 
   async updateEvent(eventId: string, updates: Partial<EventFormData>): Promise<{ success: boolean; error?: string }> {
     try {
-      // Check organizer access
-      const accessCheck = await this.checkOrganizerAccess();
-      if (!accessCheck.success) {
-        return { success: false, error: accessCheck.error };
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        return { success: false, error: 'Not authenticated' };
       }
 
-      // Validate image if provided
       if (updates.imageFile) {
         const validation = this.validateImageFile(updates.imageFile);
         if (!validation.isValid) {
@@ -305,7 +387,6 @@ class OrganizerCrudService {
         }
       }
 
-      // Upload image if provided
       let imageUrl = updates.image_url;
       if (updates.imageFile) {
         const uploadResult = await this.uploadImage(updates.imageFile, eventId);
@@ -316,26 +397,36 @@ class OrganizerCrudService {
         }
       }
 
-      // Mock update
-      await new Promise(resolve => setTimeout(resolve, 300));
-      
-      const eventIndex = mockEvents.findIndex(event => event.id === eventId);
-      if (eventIndex === -1) {
-        return { success: false, error: 'Event not found' };
+      const updateData: any = {};
+      if (updates.title) updateData.title = updates.title;
+      if (updates.description !== undefined) updateData.description = updates.description;
+      if (updates.category) updateData.category = updates.category;
+      if (updates.event_date && updates.time) {
+        updateData.start_date = `${updates.event_date}T${updates.time}:00`;
+        if (updates.end_time) {
+          updateData.end_date = `${updates.event_date}T${updates.end_time}:00`;
+        }
+      }
+      if (updates.venue) {
+        updateData.location = updates.venue;
+        updateData.venue_name = updates.venue;
+      }
+      if (updates.capacity) updateData.max_attendees = updates.capacity;
+      if (imageUrl) updateData.image_url = imageUrl;
+
+      // RLS will ensure user can only update their own events
+      const { error } = await supabase
+        .from('events')
+        .update(updateData)
+        .eq('id', eventId)
+        .eq('organizer_id', user.id);
+
+      if (error) {
+        console.error('Update event error:', error);
+        return { success: false, error: error.message };
       }
 
-      // Remove file-related fields from updates before storing
-      const { imageFile, imagePreview, ...eventUpdates } = updates;
-
-      mockEvents[eventIndex] = {
-        ...mockEvents[eventIndex],
-        ...eventUpdates,
-        image_url: imageUrl, // Use the uploaded image URL
-        updated_at: new Date().toISOString()
-      };
-
-      // Notify listeners of the change
-      this.notifyEventListeners();
+      await this.notifyEventListeners();
 
       return { success: true };
     } catch (error) {
@@ -345,28 +436,24 @@ class OrganizerCrudService {
 
   async publishEvent(eventId: string): Promise<{ success: boolean; error?: string }> {
     try {
-      // Check organizer access
-      const accessCheck = await this.checkOrganizerAccess();
-      if (!accessCheck.success) {
-        return { success: false, error: accessCheck.error };
-      }
-      
-      // Mock publish operation
-      await new Promise(resolve => setTimeout(resolve, 300));
-
-      const eventIndex = mockEvents.findIndex(event => event.id === eventId);
-      if (eventIndex === -1) {
-        return { success: false, error: 'Event not found' };
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        return { success: false, error: 'Not authenticated' };
       }
 
-      mockEvents[eventIndex] = {
-        ...mockEvents[eventIndex],
-        status: 'published',
-        updated_at: new Date().toISOString()
-      };
+      // RLS will ensure user can only publish their own events
+      const { error } = await supabase
+        .from('events')
+        .update({ status: 'published' })
+        .eq('id', eventId)
+        .eq('organizer_id', user.id);
 
-      // Notify listeners of the change
-      this.notifyEventListeners();
+      if (error) {
+        console.error('Publish event error:', error);
+        return { success: false, error: error.message };
+      }
+
+      await this.notifyEventListeners();
 
       return { success: true };
     } catch (error) {
@@ -376,24 +463,24 @@ class OrganizerCrudService {
 
   async deleteEvent(eventId: string): Promise<{ success: boolean; error?: string }> {
     try {
-      // Check organizer access
-      const accessCheck = await this.checkOrganizerAccess();
-      if (!accessCheck.success) {
-        return { success: false, error: accessCheck.error };
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        return { success: false, error: 'Not authenticated' };
       }
 
-      // Mock delete
-      await new Promise(resolve => setTimeout(resolve, 300));
-      
-      const eventIndex = mockEvents.findIndex(event => event.id === eventId);
-      if (eventIndex === -1) {
-        return { success: false, error: 'Event not found' };
+      // RLS will ensure user can only delete their own events
+      const { error } = await supabase
+        .from('events')
+        .delete()
+        .eq('id', eventId)
+        .eq('organizer_id', user.id);
+
+      if (error) {
+        console.error('Delete event error:', error);
+        return { success: false, error: error.message };
       }
 
-      mockEvents.splice(eventIndex, 1);
-
-      // Notify listeners of the change
-      this.notifyEventListeners();
+      await this.notifyEventListeners();
 
       return { success: true };
     } catch (error) {
@@ -403,22 +490,27 @@ class OrganizerCrudService {
 
   async getEventAnalytics(eventId: string): Promise<{ success: boolean; analytics?: OrganizerEventAnalytics; error?: string }> {
     try {
-      // Check organizer access
       const accessCheck = await this.checkOrganizerAccess();
       if (!accessCheck.success) {
         return { success: false, error: accessCheck.error };
       }
 
-      // Mock analytics
-      await new Promise(resolve => setTimeout(resolve, 200));
-      
+      // Get attendee count
+      const { count } = await supabase
+        .from('event_attendees')
+        .select('*', { count: 'exact', head: true })
+        .eq('event_id', eventId);
+
+      const registrations = count || 0;
+
+      // Mock analytics data (can be enhanced with real data later)
       const mockAnalytics: OrganizerEventAnalytics = {
         id: 'analytics_1',
         event_id: eventId,
         views: 1250,
-        registrations: 85,
-        conversion_rate: 6.8,
-        revenue: 12750,
+        registrations,
+        conversion_rate: registrations > 0 ? (registrations / 1250) * 100 : 0,
+        revenue: registrations * 150,
         top_referrers: ['Direct', 'Social Media', 'Email'],
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
@@ -430,286 +522,101 @@ class OrganizerCrudService {
     }
   }
 
-  async createTicketType(eventId: string, ticketData: TicketFormData): Promise<{ success: boolean; ticket?: OrganizerTicketType; error?: string }> {
-    try {
-      // Check organizer access
-      const accessCheck = await this.checkOrganizerAccess();
-      if (!accessCheck.success) {
-        return { success: false, error: accessCheck.error };
-      }
-
-      // Mock ticket creation
-      await new Promise(resolve => setTimeout(resolve, 300));
-      
-      const newTicket: OrganizerTicketType = {
-        id: `ticket_${Date.now()}`,
-        event_id: eventId,
-        ...ticketData,
-        sold: 0,
-        created_at: new Date().toISOString()
-      };
-
-      return { success: true, ticket: newTicket };
-    } catch (error) {
-      return { success: false, error: 'Failed to create ticket type' };
-    }
-  }
-
-  async getTicketTypes(eventId: string): Promise<{ success: boolean; tickets?: OrganizerTicketType[]; error?: string }> {
-    try {
-      // Check organizer access
-      const accessCheck = await this.checkOrganizerAccess();
-      if (!accessCheck.success) {
-        return { success: false, error: accessCheck.error };
-      }
-
-      // Mock ticket types
-      await new Promise(resolve => setTimeout(resolve, 200));
-      
-      const mockTickets: OrganizerTicketType[] = [
-        {
-          id: 'ticket_1',
-          event_id: eventId,
-          name: 'Early Bird',
-          description: 'Limited time offer',
-          price: 99,
-          currency: 'USD',
-          quantity: 100,
-          sold: 25,
-          sale_start: new Date().toISOString(),
-          is_active: true,
-          benefits: ['Early access'],
-          restrictions: ['Non-refundable'],
-          created_at: new Date().toISOString()
-        }
-      ];
-
-      return { success: true, tickets: mockTickets };
-    } catch (error) {
-      return { success: false, error: 'Failed to fetch ticket types' };
-    }
-  }
-
-  async updateTicketType(ticketId: string, updates: Partial<TicketFormData>): Promise<{ success: boolean; error?: string }> {
-    try {
-      // Check organizer access
-      const accessCheck = await this.checkOrganizerAccess();
-      if (!accessCheck.success) {
-        return { success: false, error: accessCheck.error };
-      }
-
-      // Mock update
-      await new Promise(resolve => setTimeout(resolve, 300));
-
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: 'Failed to update ticket type' };
-    }
-  }
-
-  async deleteTicketType(ticketId: string): Promise<{ success: boolean; error?: string }> {
-    try {
-      // Check organizer access
-      const accessCheck = await this.checkOrganizerAccess();
-      if (!accessCheck.success) {
-        return { success: false, error: accessCheck.error };
-      }
-
-      // Mock delete
-      await new Promise(resolve => setTimeout(resolve, 300));
-
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: 'Failed to delete ticket type' };
-    }
-  }
-
   async getEventAttendees(eventId: string): Promise<{ success: boolean; attendees?: OrganizerAttendee[]; error?: string }> {
     try {
-      // Check organizer access
       const accessCheck = await this.checkOrganizerAccess();
       if (!accessCheck.success) {
         return { success: false, error: accessCheck.error };
       }
 
-      // Mock attendees
-      await new Promise(resolve => setTimeout(resolve, 200));
-      
-      const mockAttendees: OrganizerAttendee[] = [
-        {
-          id: 'attendee_1',
-          event_id: eventId,
-          user_id: 'user_1',
-          registration_date: new Date().toISOString(),
-          check_in_status: 'pending',
-          payment_status: 'completed',
-          additional_info: {},
-          user: {
-            full_name: 'John Doe',
-            email: 'john@example.com'
-          },
-          ticket_type: {
-            name: 'Early Bird',
-            price: 99
-          }
-        }
-      ];
+      const { data, error } = await supabase
+        .from('event_attendees')
+        .select(`
+          *,
+          user_profiles!inner(full_name, email)
+        `)
+        .eq('event_id', eventId);
 
-      return { success: true, attendees: mockAttendees };
+      if (error) {
+        console.error('Get attendees error:', error);
+        return { success: false, error: error.message };
+      }
+
+      const attendees: OrganizerAttendee[] = (data || []).map((attendee: any) => ({
+        id: attendee.id,
+        event_id: attendee.event_id,
+        user_id: attendee.user_id,
+        ticket_type_id: attendee.ticket_type,
+        registration_date: attendee.registration_date,
+        check_in_status: attendee.status || 'pending',
+        payment_status: attendee.payment_status,
+        additional_info: attendee.notes ? { notes: attendee.notes } : {},
+        user: {
+          full_name: attendee.user_profiles?.full_name || 'Unknown',
+          email: attendee.user_profiles?.email || 'unknown@email.com'
+        }
+      }));
+
+      return { success: true, attendees };
     } catch (error) {
       return { success: false, error: 'Failed to fetch attendees' };
     }
   }
 
-  async updateAttendeeStatus(attendeeId: string, checkInStatus: 'pending' | 'checked-in' | 'no-show'): Promise<{ success: boolean; error?: string }> {
-    try {
-      // Check organizer access
-      const accessCheck = await this.checkOrganizerAccess();
-      if (!accessCheck.success) {
-        return { success: false, error: accessCheck.error };
-      }
-
-      // Mock status update
-      await new Promise(resolve => setTimeout(resolve, 200));
-
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: 'Failed to update attendee status' };
-    }
+  // Ticket type methods (using mock data for now as ticket_types table may not exist)
+  async createTicketType(eventId: string, ticketData: TicketFormData): Promise<{ success: boolean; ticket?: OrganizerTicketType; error?: string }> {
+    // Mock implementation - would need ticket_types table
+    const newTicket: OrganizerTicketType = {
+      id: `ticket_${Date.now()}`,
+      event_id: eventId,
+      ...ticketData,
+      sold: 0,
+      created_at: new Date().toISOString()
+    };
+    return { success: true, ticket: newTicket };
   }
 
-  async createMarketingCampaign(eventId: string, campaignData: Omit<MarketingCampaign, 'id' | 'event_id' | 'created_at' | 'open_rate' | 'click_rate'>): Promise<{ success: boolean; campaign?: MarketingCampaign; error?: string }> {
-    try {
-      // Check organizer access
-      const accessCheck = await this.checkOrganizerAccess();
-      if (!accessCheck.success) {
-        return { success: false, error: accessCheck.error };
-      }
-
-      // Mock campaign creation
-      await new Promise(resolve => setTimeout(resolve, 400));
-      
-      const newCampaign: MarketingCampaign = {
-        id: `campaign_${Date.now()}`,
-        event_id: eventId,
-        ...campaignData,
-        open_rate: Math.random() * 30 + 10,
-        click_rate: Math.random() * 10 + 2,
-        created_at: new Date().toISOString()
-      };
-
-      return { success: true, campaign: newCampaign };
-    } catch (error) {
-      return { success: false, error: 'Failed to create campaign' };
-    }
+  async getTicketTypes(eventId: string): Promise<{ success: boolean; tickets?: OrganizerTicketType[]; error?: string }> {
+    // Mock implementation
+    return { success: true, tickets: [] };
   }
 
-  async getMarketingCampaigns(eventId: string): Promise<{ success: boolean; campaigns?: MarketingCampaign[]; error?: string }> {
-    try {
-      // Check organizer access
-      const accessCheck = await this.checkOrganizerAccess();
-      if (!accessCheck.success) {
-        return { success: false, error: accessCheck.error };
-      }
-
-      // Mock campaigns
-      await new Promise(resolve => setTimeout(resolve, 200));
-      
-      const mockCampaigns: MarketingCampaign[] = [
-        {
-          id: 'campaign_1',
-          event_id: eventId,
-          name: 'Pre-Event Announcement',
-          type: 'email',
-          subject: 'Don\'t miss our event!',
-          content: 'Join us for an amazing experience...',
-          audience: 'all_subscribers',
-          status: 'sent',
-          open_rate: 24.5,
-          click_rate: 8.2,
-          created_at: new Date().toISOString()
-        }
-      ];
-
-      return { success: true, campaigns: mockCampaigns };
-    } catch (error) {
-      return { success: false, error: 'Failed to fetch campaigns' };
-    }
+  async updateTicketType(ticketId: string, updates: Partial<TicketFormData>): Promise<{ success: boolean; error?: string }> {
+    // Mock implementation
+    return { success: true };
   }
 
-  async updateMarketingCampaign(campaignId: string, updates: Partial<MarketingCampaign>): Promise<{ success: boolean; error?: string }> {
-    try {
-      // Check organizer access
-      const accessCheck = await this.checkOrganizerAccess();
-      if (!accessCheck.success) {
-        return { success: false, error: accessCheck.error };
-      }
-
-      // Mock update
-      await new Promise(resolve => setTimeout(resolve, 300));
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: 'Failed to update campaign' };
-    }
+  async deleteTicketType(ticketId: string): Promise<{ success: boolean; error?: string }> {
+    // Mock implementation
+    return { success: true };
   }
 
-  async deleteMarketingCampaign(campaignId: string): Promise<{ success: boolean; error?: string }> {
-    try {
-      // Check organizer access
-      const accessCheck = await this.checkOrganizerAccess();
-      if (!accessCheck.success) {
-        return { success: false, error: accessCheck.error };
-      }
-
-      // Mock delete
-      await new Promise(resolve => setTimeout(resolve, 300));
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: 'Failed to delete campaign' };
-    }
+  // Marketing campaign methods (mock implementation)
+  async createCampaign(eventId: string, campaignData: Partial<MarketingCampaign>): Promise<{ success: boolean; campaign?: MarketingCampaign; error?: string }> {
+    const newCampaign: MarketingCampaign = {
+      id: `campaign_${Date.now()}`,
+      event_id: eventId,
+      name: campaignData.name || 'New Campaign',
+      type: campaignData.type || 'email',
+      status: 'draft',
+      open_rate: 0,
+      click_rate: 0,
+      created_at: new Date().toISOString(),
+      ...campaignData
+    };
+    return { success: true, campaign: newCampaign };
   }
 
-
-  // Validate image file
-  private validateImageFile(file: File): { isValid: boolean; error?: string } {
-    // Check file size (5MB limit)
-    const maxSize = 5 * 1024 * 1024; // 5MB
-    if (file.size > maxSize) {
-      return {
-        isValid: false,
-        error: 'Image size must be less than 5MB'
-      };
-    }
-
-    // Check file type
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-    if (!allowedTypes.includes(file.type)) {
-      return {
-        isValid: false,
-        error: 'Invalid file type. Please upload a JPEG, PNG, GIF, or WebP image'
-      };
-    }
-
-    return { isValid: true };
+  async getCampaigns(eventId: string): Promise<{ success: boolean; campaigns?: MarketingCampaign[]; error?: string }> {
+    return { success: true, campaigns: [] };
   }
 
-  // Image upload using storage service
-  async uploadImage(file: File, eventId?: string): Promise<{ success: boolean; url?: string; error?: string }> {
-    try {
-      // Import storage service dynamically to avoid circular dependencies
-      const { storageService } = await import('./storageService');
-      
-      const result = await storageService.uploadEventImage(file, eventId);
-      
-      if (result.success) {
-        return { success: true, url: result.url };
-      } else {
-        return { success: false, error: result.error || 'Upload failed' };
-      }
-    } catch (error) {
-      console.error('Image upload error:', error);
-      return { success: false, error: 'Failed to upload image' };
-    }
+  async updateCampaign(campaignId: string, updates: Partial<MarketingCampaign>): Promise<{ success: boolean; error?: string }> {
+    return { success: true };
+  }
+
+  async deleteCampaign(campaignId: string): Promise<{ success: boolean; error?: string }> {
+    return { success: true };
   }
 }
 
