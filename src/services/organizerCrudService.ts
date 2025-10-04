@@ -1,3 +1,4 @@
+// src/services/organizerCrudService.ts
 import { supabase } from '../lib/supabaseConfig';
 
 // Interfaces for organizer service
@@ -139,6 +140,28 @@ export interface TicketFormData {
   restrictions: string[];
 }
 
+// Helper to transform raw Supabase event data into the OrganizerEvent format
+const transformDbEventToOrganizerEvent = (event: any): OrganizerEvent => ({
+    id: event.id,
+    organizer_id: event.organizer_id,
+    title: event.title,
+    description: event.description,
+    category: event.category,
+    event_date: new Date(event.start_date).toISOString().split('T')[0],
+    time: new Date(event.start_date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    end_time: event.end_date ? new Date(event.end_date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined,
+    venue: event.location || event.venue_name,
+    capacity: event.max_attendees || 0,
+    attendees: event.event_attendees?.[0]?.count || 0,
+    image_url: event.image_url,
+    status: event.status,
+    visibility: 'public', // Assuming default visibility
+    created_at: event.created_at,
+    updated_at: event.updated_at,
+    price: event.price
+});
+
+
 class OrganizerCrudService {
   private static instance: OrganizerCrudService;
   private eventListeners: ((events: OrganizerEvent[]) => void)[] = [];
@@ -272,24 +295,7 @@ class OrganizerCrudService {
         return { success: false, error: error.message };
       }
 
-      const newEvent: OrganizerEvent = {
-        id: data.id,
-        organizer_id: data.organizer_id,
-        title: data.title,
-        description: data.description,
-        category: data.category,
-        event_date: data.start_date.split('T')[0],
-        time: data.start_date.split('T')[1].substring(0, 5),
-        end_time: data.end_date ? data.end_date.split('T')[1].substring(0, 5) : undefined,
-        venue: data.location,
-        capacity: data.max_attendees || 0,
-        attendees: 0,
-        image_url: data.image_url,
-        status: data.status,
-        visibility: 'public',
-        created_at: data.created_at,
-        updated_at: data.updated_at
-      };
+      const newEvent = transformDbEventToOrganizerEvent(data);
 
       await this.notifyEventListeners(user.id);
       return { success: true, event: newEvent };
@@ -317,25 +323,7 @@ class OrganizerCrudService {
         return { success: false, error: error.message };
       }
 
-      const events: OrganizerEvent[] = (data || []).map((event: any) => ({
-        id: event.id,
-        organizer_id: event.organizer_id,
-        title: event.title,
-        description: event.description,
-        category: event.category,
-        event_date: event.start_date.split('T')[0],
-        time: event.start_date.split('T')[1].substring(0, 5),
-        end_time: event.end_date ? event.end_date.split('T')[1].substring(0, 5) : undefined,
-        venue: event.location || event.venue_name,
-        capacity: event.max_attendees || 0,
-        attendees: event.event_attendees?.[0]?.count || 0,
-        image_url: event.image_url,
-        status: event.status,
-        visibility: 'public',
-        created_at: event.created_at,
-        updated_at: event.updated_at,
-        price: event.price
-      }));
+      const events: OrganizerEvent[] = (data || []).map(transformDbEventToOrganizerEvent);
 
       return { success: true, events };
     } catch (error) {
@@ -343,39 +331,67 @@ class OrganizerCrudService {
       return { success: false, error: `Failed to fetch events: ${message}` };
     }
   }
+  
+  async getPublishedEvents(): Promise<{ success: boolean; events?: OrganizerEvent[]; error?: string }> {
+    try {
+        const { data, error } = await supabase
+            .from('events')
+            .select(`*, event_attendees(count)`)
+            .eq('status', 'published')
+            .order('start_date', { ascending: true });
+
+        if (error) {
+            console.error('Get published events error:', error);
+            return { success: false, error: error.message };
+        }
+
+        const events: OrganizerEvent[] = (data || []).map(transformDbEventToOrganizerEvent);
+
+        return { success: true, events };
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'An unexpected error occurred';
+        return { success: false, error: `Failed to fetch published events: ${message}` };
+    }
+  }
+
 
   async getEventById(eventId: string): Promise<{ success: boolean; event?: OrganizerEvent; error?: string }> {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        // Allow public viewing of published events
-        const { data, error } = await supabase
-          .from('events')
-          .select('*')
-          .eq('id', eventId)
-          .eq('status', 'published')
-          .single();
-        if (error || !data) return { success: false, error: 'Event not found or not published' };
-        return { success: true, event: data as OrganizerEvent };
-      }
+        const { data: { user } } = await supabase.auth.getUser();
 
-      const { data, error } = await supabase
-        .from('events')
-        .select('*')
-        .eq('id', eventId)
-        .or(`organizer_id.eq.${user.id},status.eq.published`)
-        .single();
-      
-      if (error) return { success: false, error: error.message };
-      if (!data) return { success: false, error: 'Event not found' };
-      
-      return { success: true, event: data as OrganizerEvent };
+        let query = supabase
+            .from('events')
+            .select(`*, event_attendees(count)`)
+            .eq('id', eventId);
+
+        // If user is not logged in, they can only see published events
+        if (!user) {
+            query = query.eq('status', 'published');
+        } else {
+            // If logged in, they can see their own events (any status) OR any published event
+            query = query.or(`organizer_id.eq.${user.id},status.eq.published`);
+        }
+
+        const { data, error } = await query.single();
+        
+        if (error) {
+            console.error('Get event by ID error:', error);
+            return { success: false, error: 'Event not found or you do not have permission to view it.' };
+        }
+        
+        if (!data) {
+            return { success: false, error: 'Event not found' };
+        }
+
+        const event = transformDbEventToOrganizerEvent(data);
+        return { success: true, event };
 
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'An unexpected error occurred';
-      return { success: false, error: `Failed to fetch event: ${message}` };
+        const message = error instanceof Error ? error.message : 'An unexpected error occurred';
+        return { success: false, error: `Failed to fetch event: ${message}` };
     }
   }
+
 
   async updateEvent(eventId: string, updates: Partial<EventFormData>): Promise<{ success: boolean; error?: string }> {
     try {
