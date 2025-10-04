@@ -39,14 +39,13 @@ export interface OrganizerTicketType {
   created_at: string;
 }
 
-// ADDED: Interfaces for Speakers, Sponsors, and Schedule
 export interface Speaker {
-    id: string;
-    name: string;
-    title: string;
-    company: string;
-    bio: string;
-    imageUrl: string;
+  id: string;
+  name: string;
+  title: string;
+  company: string;
+  bio: string;
+  imageUrl: string;
 }
 
 export interface Sponsor {
@@ -160,7 +159,6 @@ class OrganizerCrudService {
   }
 
   private async notifyEventListeners(organizerId?: string) {
-    // Get authenticated user's ID if not provided
     const { data: { user } } = await supabase.auth.getUser();
     const userId = organizerId || user?.id;
     
@@ -308,13 +306,9 @@ class OrganizerCrudService {
         return { success: false, error: 'Not authenticated' };
       }
 
-      // Use authenticated user's ID, not the parameter
       const { data, error } = await supabase
         .from('events')
-        .select(`
-          *,
-          event_attendees(count)
-        `)
+        .select(`*, event_attendees(count)`)
         .eq('organizer_id', user.id)
         .order('created_at', { ascending: false });
 
@@ -354,46 +348,29 @@ class OrganizerCrudService {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        return { success: false, error: 'Not authenticated' };
+        // Allow public viewing of published events
+        const { data, error } = await supabase
+          .from('events')
+          .select('*')
+          .eq('id', eventId)
+          .eq('status', 'published')
+          .single();
+        if (error || !data) return { success: false, error: 'Event not found or not published' };
+        return { success: true, event: data as OrganizerEvent };
       }
 
-      // RLS-compatible query: filter by both event ID and organizer ID
       const { data, error } = await supabase
         .from('events')
         .select('*')
         .eq('id', eventId)
-        .eq('organizer_id', user.id)
+        .or(`organizer_id.eq.${user.id},status.eq.published`)
         .single();
+      
+      if (error) return { success: false, error: error.message };
+      if (!data) return { success: false, error: 'Event not found' };
+      
+      return { success: true, event: data as OrganizerEvent };
 
-      if (error) {
-        console.error('Get event error:', error);
-        return { success: false, error: error.message };
-      }
-
-      if (!data) {
-        return { success: false, error: 'Event not found' };
-      }
-
-      const event: OrganizerEvent = {
-        id: data.id,
-        organizer_id: data.organizer_id,
-        title: data.title,
-        description: data.description,
-        category: data.category,
-        event_date: data.start_date.split('T')[0],
-        time: data.start_date.split('T')[1].substring(0, 5),
-        end_time: data.end_date ? data.end_date.split('T')[1].substring(0, 5) : undefined,
-        venue: data.location || data.venue_name,
-        capacity: data.max_attendees || 0,
-        image_url: data.image_url,
-        status: data.status,
-        visibility: 'public',
-        created_at: data.created_at,
-        updated_at: data.updated_at,
-        price: data.price
-      };
-
-      return { success: true, event };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'An unexpected error occurred';
       return { success: false, error: `Failed to fetch event: ${message}` };
@@ -441,7 +418,6 @@ class OrganizerCrudService {
       if (updates.capacity) updateData.max_attendees = updates.capacity;
       if (imageUrl) updateData.image_url = imageUrl;
 
-      // RLS will ensure user can only update their own events
       const { error } = await supabase
         .from('events')
         .update(updateData)
@@ -468,7 +444,6 @@ class OrganizerCrudService {
         return { success: false, error: 'Not authenticated' };
       }
 
-      // RLS will ensure user can only publish their own events
       const { error } = await supabase
         .from('events')
         .update({ status: 'published' })
@@ -495,7 +470,6 @@ class OrganizerCrudService {
         return { success: false, error: 'Not authenticated' };
       }
 
-      // RLS will ensure user can only delete their own events
       const { error } = await supabase
         .from('events')
         .delete()
@@ -516,21 +490,14 @@ class OrganizerCrudService {
   }
 
   async getEventAnalytics(eventId: string): Promise<{ success: boolean; analytics?: OrganizerEventAnalytics; error?: string }> {
-    try {
+    // ... existing implementation ...
+     try {
       const accessCheck = await this.checkOrganizerAccess();
       if (!accessCheck.success) {
         return { success: false, error: accessCheck.error };
       }
-
-      // Get attendee count
-      const { count } = await supabase
-        .from('event_attendees')
-        .select('*', { count: 'exact', head: true })
-        .eq('event_id', eventId);
-
+      const { count } = await supabase.from('event_attendees').select('*', { count: 'exact', head: true }).eq('event_id', eventId);
       const registrations = count || 0;
-
-      // Mock analytics data (can be enhanced with real data later)
       const mockAnalytics: OrganizerEventAnalytics = {
         id: 'analytics_1',
         event_id: eventId,
@@ -542,7 +509,6 @@ class OrganizerCrudService {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
-
       return { success: true, analytics: mockAnalytics };
     } catch (error) {
       return { success: false, error: 'Failed to fetch analytics' };
@@ -550,25 +516,17 @@ class OrganizerCrudService {
   }
 
   async getEventAttendees(eventId: string): Promise<{ success: boolean; attendees?: OrganizerAttendee[]; error?: string }> {
-    try {
+    // ... existing implementation ...
+     try {
       const accessCheck = await this.checkOrganizerAccess();
       if (!accessCheck.success) {
         return { success: false, error: accessCheck.error };
       }
-
-      const { data, error } = await supabase
-        .from('event_attendees')
-        .select(`
-          *,
-          user_profiles!inner(full_name, email)
-        `)
-        .eq('event_id', eventId);
-
+      const { data, error } = await supabase.from('event_attendees').select(`*, user_profiles!inner(full_name, email)`).eq('event_id', eventId);
       if (error) {
         console.error('Get attendees error:', error);
         return { success: false, error: error.message };
       }
-
       const attendees: OrganizerAttendee[] = (data || []).map((attendee: any) => ({
         id: attendee.id,
         event_id: attendee.event_id,
@@ -578,64 +536,34 @@ class OrganizerCrudService {
         check_in_status: attendee.status || 'pending',
         payment_status: attendee.payment_status,
         additional_info: attendee.notes ? { notes: attendee.notes } : {},
-        user: {
-          full_name: attendee.user_profiles?.full_name || 'Unknown',
-          email: attendee.user_profiles?.email || 'unknown@email.com'
-        }
+        user: { full_name: attendee.user_profiles?.full_name || 'Unknown', email: attendee.user_profiles?.email || 'unknown@email.com' }
       }));
-
       return { success: true, attendees };
     } catch (error) {
       return { success: false, error: 'Failed to fetch attendees' };
     }
   }
 
-  // Ticket type methods
   async createTicketType(eventId: string, ticketData: TicketFormData): Promise<{ success: boolean; ticket?: OrganizerTicketType; error?: string }> {
-    // This is still a mock implementation until you build the UI to create real tickets
-    const newTicket: OrganizerTicketType = {
-      id: `ticket_${Date.now()}`,
-      event_id: eventId,
-      ...ticketData,
-      sold: 0,
-      created_at: new Date().toISOString()
-    };
-    console.log("Mock creating ticket:", newTicket);
+    const newTicket: OrganizerTicketType = { id: `ticket_${Date.now()}`, event_id: eventId, ...ticketData, sold: 0, created_at: new Date().toISOString() };
     return { success: true, ticket: newTicket };
   }
 
   async getTicketTypes(eventId: string): Promise<{ success: boolean; tickets?: OrganizerTicketType[]; error?: string }> {
-    // This is also a mock implementation
     console.log(`Fetching mock tickets for event ${eventId}`);
-    const mockTickets: OrganizerTicketType[] = [
-        // You can add some default mock tickets here if you want for testing
-    ];
-    return { success: true, tickets: mockTickets };
+    return { success: true, tickets: [] };
   }
 
   async updateTicketType(ticketId: string, updates: Partial<TicketFormData>): Promise<{ success: boolean; error?: string }> {
-    console.log(`Mock updating ticket ${ticketId} with`, updates);
     return { success: true };
   }
 
   async deleteTicketType(ticketId: string): Promise<{ success: boolean; error?: string }> {
-    console.log(`Mock deleting ticket ${ticketId}`);
     return { success: true };
   }
 
-  // Marketing campaign methods (mock implementation)
   async createCampaign(eventId: string, campaignData: Partial<MarketingCampaign>): Promise<{ success: boolean; campaign?: MarketingCampaign; error?: string }> {
-    const newCampaign: MarketingCampaign = {
-      id: `campaign_${Date.now()}`,
-      event_id: eventId,
-      name: campaignData.name || 'New Campaign',
-      type: campaignData.type || 'email',
-      status: 'draft',
-      open_rate: 0,
-      click_rate: 0,
-      created_at: new Date().toISOString(),
-      ...campaignData
-    };
+    const newCampaign: MarketingCampaign = { id: `campaign_${Date.now()}`, event_id: eventId, name: campaignData.name || 'New Campaign', type: campaignData.type || 'email', status: 'draft', open_rate: 0, click_rate: 0, created_at: new Date().toISOString(), ...campaignData };
     return { success: true, campaign: newCampaign };
   }
 
@@ -650,64 +578,127 @@ class OrganizerCrudService {
   async deleteCampaign(campaignId: string): Promise<{ success: boolean; error?: string }> {
     return { success: true };
   }
-  
-  // ADDED: Method to get speakers for a specific event
+
+  // --- NEWLY ADDED/IMPLEMENTED METHODS ---
+
   async getEventSpeakers(eventId: string): Promise<{ success: boolean; speakers?: Speaker[]; error?: string }> {
     try {
-        const { data, error } = await supabase
-            .from('event_speakers')
-            .select('speakers(*)')
-            .eq('event_id', eventId);
-
-        if (error) throw error;
-        
-        const speakers = data.map((item: any) => ({
-            id: item.speakers.id,
-            name: item.speakers.name,
-            title: item.speakers.title,
-            company: item.speakers.company,
-            bio: item.speakers.bio,
-            imageUrl: item.speakers.image_url
-        }));
-        
-        return { success: true, speakers };
-    } catch (error) {
-        console.error("Error fetching speakers:", error);
-        return { success: false, error: 'Failed to fetch speakers' };
+      const { data, error } = await supabase
+        .from('event_speakers')
+        .select('speakers(*)')
+        .eq('event_id', eventId);
+      if (error) throw error;
+      const speakers = data.map((item: any) => ({
+        id: item.speakers.id,
+        name: item.speakers.name,
+        title: item.speakers.title,
+        company: item.speakers.company,
+        bio: item.speakers.bio,
+        imageUrl: item.speakers.image_url
+      }));
+      return { success: true, speakers };
+    } catch (error: any) {
+      console.error("Error fetching speakers:", error);
+      return { success: false, error: 'Failed to fetch speakers: ' + error.message };
     }
   }
 
-  // ADDED: Method to get sponsors for a specific event
   async getEventSponsors(eventId: string): Promise<{ success: boolean; sponsors?: Sponsor[]; error?: string }> {
-      try {
-        const { data, error } = await supabase
-            .from('event_sponsors')
-            .select('sponsors(*)')
-            .eq('event_id', eventId);
-        
-        if (error) throw error;
-
-        const sponsors = data.map((item: any) => ({
-            id: item.sponsors.id,
-            name: item.sponsors.name,
-            logoUrl: item.sponsors.logo_url,
-            website: item.sponsors.website_url,
-            tier: item.sponsors.tier
-        }));
-
-        return { success: true, sponsors };
-    } catch (error) {
-        console.error("Error fetching sponsors:", error);
-        return { success: false, error: 'Failed to fetch sponsors' };
+    try {
+      const { data, error } = await supabase
+        .from('event_sponsors')
+        .select('sponsors(*)')
+        .eq('event_id', eventId);
+      if (error) throw error;
+      const sponsors = data.map((item: any) => ({
+        id: item.sponsors.id,
+        name: item.sponsors.name,
+        logoUrl: item.sponsors.logo_url,
+        website: item.sponsors.website_url,
+        tier: item.sponsors.tier
+      }));
+      return { success: true, sponsors };
+    } catch (error: any) {
+      console.error("Error fetching sponsors:", error);
+      return { success: false, error: 'Failed to fetch sponsors: ' + error.message };
     }
   }
 
-  // ADDED: Mock method to get schedule for a specific event
   async getEventSchedule(eventId: string): Promise<{ success: boolean; schedule?: ScheduleItem[]; error?: string }> {
-    // This is a mock implementation as the schedule table/logic isn't fully built out.
-    // In a real app, you would fetch this from a 'schedule_items' table.
     console.log(`Fetching schedule for event ${eventId} (mock)`);
     return new Promise(resolve => setTimeout(() => resolve({ success: true, schedule: [] }), 200));
+  }
+  
+  async saveEventSpeakers(eventId: string, speakers: any[]): Promise<{ success: boolean; error?: string }> {
+    try {
+      const speakerUpserts = speakers.map(s => ({
+        name: s.name,
+        title: s.title,
+        company: s.company,
+        bio: s.bio,
+        image_url: s.image,
+      }));
+      
+      const { data: upsertedSpeakers, error: upsertError } = await supabase
+        .from('speakers')
+        .upsert(speakerUpserts, { onConflict: 'name, company' })
+        .select('id, name');
+
+      if (upsertError) throw upsertError;
+
+      await supabase.from('event_speakers').delete().eq('event_id', eventId);
+
+      const speakerLinks = upsertedSpeakers.map(us => ({
+        event_id: eventId,
+        speaker_id: us.id
+      }));
+
+      if (speakerLinks.length > 0) {
+        const { error: linkError } = await supabase.from('event_speakers').insert(speakerLinks);
+        if (linkError) throw linkError;
+      }
+      
+      return { success: true };
+    } catch (error: any) {
+      console.error('Error saving speakers:', error);
+      return { success: false, error: 'Failed to save speakers: ' + error.message };
+    }
+  }
+
+  async saveEventSponsors(eventId: string, sponsors: any[]): Promise<{ success: boolean; error?: string }> {
+      try {
+          const sponsorUpserts = sponsors.map(s => ({
+            name: s.name,
+            logo_url: s.logo,
+            website_url: s.website,
+            tier: s.tier,
+            description: s.description
+          }));
+
+          const { data: upsertedSponsors, error: upsertError } = await supabase
+            .from('sponsors')
+            .upsert(sponsorUpserts, { onConflict: 'name' })
+            .select('id, name');
+
+          if (upsertError) throw upsertError;
+          
+          await supabase.from('event_sponsors').delete().eq('event_id', eventId);
+
+          const sponsorLinks = upsertedSponsors.map(us => ({
+              event_id: eventId,
+              sponsor_id: us.id
+          }));
+          
+          if (sponsorLinks.length > 0) {
+            const { error: linkError } = await supabase.from('event_sponsors').insert(sponsorLinks);
+            if (linkError) throw linkError;
+          }
+
+          return { success: true };
+      } catch (error: any) {
+          console.error('Error saving sponsors:', error);
+          return { success: false, error: 'Failed to save sponsors: ' + error.message };
+      }
   }
 }
 
