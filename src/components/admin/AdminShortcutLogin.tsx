@@ -20,7 +20,7 @@ const AdminShortcutLogin: React.FC<AdminShortcutLoginProps> = ({ onClose }) => {
     setError('');
     setLoading(true);
 
-    const ADMIN_EMAIL = 'tanmaymogabeera365210';
+    const ADMIN_EMAIL = 'tanmay365210mogabeera@gmail.com';
     const ADMIN_PASSWORD = 'tam123***';
 
     if (email !== ADMIN_EMAIL || password !== ADMIN_PASSWORD) {
