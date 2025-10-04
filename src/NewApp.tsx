@@ -4,6 +4,8 @@ import { AuthProvider, useAuth } from './contexts/NewAuthContext';
 import { AppProvider } from './contexts/AppContext';
 import ProtectedRoute from './components/common/ProtectedRoute';
 import UnauthorizedPage from './components/pages/UnauthorizedPage';
+import AdminShortcutLogin from './components/admin/AdminShortcutLogin';
+import { useAdminShortcut } from './hooks/useAdminShortcut';
 import './index.css';
 import './components/chart-styles.css';
 import { Loader2 } from 'lucide-react';
@@ -79,6 +81,7 @@ const LoadingFallback: React.FC = () => (
 
 const AppContent: React.FC = () => {
   const { user, profile, isAuthenticated } = useAuth();
+  const { isModalOpen, closeModal } = useAdminShortcut();
 
   console.log('AppContent render:', { user, profile, isAuthenticated });
 
@@ -101,6 +104,7 @@ const AppContent: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       {renderNavigation()}
+      {isModalOpen && <AdminShortcutLogin onClose={closeModal} />}
       <main>
         <Suspense fallback={<LoadingFallback />}>
           <Routes>
