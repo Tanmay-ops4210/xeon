@@ -641,8 +641,28 @@ class OrganizerCrudService {
   }
 
   async getEventSchedule(eventId: string): Promise<{ success: boolean; schedule?: ScheduleItem[]; error?: string }> {
-    console.log(`Fetching schedule for event ${eventId} (mock)`);
-    return new Promise(resolve => setTimeout(() => resolve({ success: true, schedule: [] }), 200));
+    try {
+      const { data, error } = await supabase
+        .from('event_schedule')
+        .select('*')
+        .eq('event_id', eventId)
+        .order('start_time', { ascending: true });
+
+      if (error) throw error;
+
+      const schedule: ScheduleItem[] = data.map((item: any) => ({
+        id: item.id,
+        startTime: item.start_time,
+        endTime: item.end_time,
+        title: item.title,
+        description: item.description || ''
+      }));
+
+      return { success: true, schedule };
+    } catch (error: any) {
+      console.error("Error fetching schedule:", error);
+      return { success: false, error: 'Failed to fetch schedule: ' + error.message };
+    }
   }
   
   async saveEventSpeakers(eventId: string, speakers: any[]): Promise<{ success: boolean; error?: string }> {
@@ -697,14 +717,14 @@ class OrganizerCrudService {
             .select('id, name');
 
           if (upsertError) throw upsertError;
-          
+
           await supabase.from('event_sponsors').delete().eq('event_id', eventId);
 
           const sponsorLinks = upsertedSponsors.map(us => ({
               event_id: eventId,
               sponsor_id: us.id
           }));
-          
+
           if (sponsorLinks.length > 0) {
             const { error: linkError } = await supabase.from('event_sponsors').insert(sponsorLinks);
             if (linkError) throw linkError;
@@ -715,6 +735,40 @@ class OrganizerCrudService {
           console.error('Error saving sponsors:', error);
           return { success: false, error: 'Failed to save sponsors: ' + error.message };
       }
+  }
+
+  async saveEventSchedule(eventId: string, scheduleItems: any[]): Promise<{ success: boolean; error?: string }> {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        return { success: false, error: 'Not authenticated' };
+      }
+
+      await supabase.from('event_schedule').delete().eq('event_id', eventId);
+
+      if (scheduleItems.length > 0) {
+        const scheduleInserts = scheduleItems.map(item => ({
+          event_id: eventId,
+          title: item.title,
+          description: item.description || '',
+          start_time: item.startTime,
+          end_time: item.endTime,
+          location: item.location || null,
+          speaker_id: item.speaker_id || null
+        }));
+
+        const { error: insertError } = await supabase
+          .from('event_schedule')
+          .insert(scheduleInserts);
+
+        if (insertError) throw insertError;
+      }
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('Error saving schedule:', error);
+      return { success: false, error: 'Failed to save schedule: ' + error.message };
+    }
   }
 }
 
