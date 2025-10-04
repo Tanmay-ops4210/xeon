@@ -39,6 +39,33 @@ export interface OrganizerTicketType {
   created_at: string;
 }
 
+// ADDED: Interfaces for Speakers, Sponsors, and Schedule
+export interface Speaker {
+    id: string;
+    name: string;
+    title: string;
+    company: string;
+    bio: string;
+    imageUrl: string;
+}
+
+export interface Sponsor {
+    id: string;
+    name: string;
+    logoUrl: string;
+    website: string;
+    tier: string;
+}
+
+export interface ScheduleItem {
+    id: string;
+    startTime: string;
+    endTime: string;
+    title: string;
+    description: string;
+}
+
+
 export interface OrganizerEventAnalytics {
   id: string;
   event_id: string;
@@ -563,9 +590,9 @@ class OrganizerCrudService {
     }
   }
 
-  // Ticket type methods (using mock data for now as ticket_types table may not exist)
+  // Ticket type methods
   async createTicketType(eventId: string, ticketData: TicketFormData): Promise<{ success: boolean; ticket?: OrganizerTicketType; error?: string }> {
-    // Mock implementation - would need ticket_types table
+    // This is still a mock implementation until you build the UI to create real tickets
     const newTicket: OrganizerTicketType = {
       id: `ticket_${Date.now()}`,
       event_id: eventId,
@@ -573,21 +600,26 @@ class OrganizerCrudService {
       sold: 0,
       created_at: new Date().toISOString()
     };
+    console.log("Mock creating ticket:", newTicket);
     return { success: true, ticket: newTicket };
   }
 
   async getTicketTypes(eventId: string): Promise<{ success: boolean; tickets?: OrganizerTicketType[]; error?: string }> {
-    // Mock implementation
-    return { success: true, tickets: [] };
+    // This is also a mock implementation
+    console.log(`Fetching mock tickets for event ${eventId}`);
+    const mockTickets: OrganizerTicketType[] = [
+        // You can add some default mock tickets here if you want for testing
+    ];
+    return { success: true, tickets: mockTickets };
   }
 
   async updateTicketType(ticketId: string, updates: Partial<TicketFormData>): Promise<{ success: boolean; error?: string }> {
-    // Mock implementation
+    console.log(`Mock updating ticket ${ticketId} with`, updates);
     return { success: true };
   }
 
   async deleteTicketType(ticketId: string): Promise<{ success: boolean; error?: string }> {
-    // Mock implementation
+    console.log(`Mock deleting ticket ${ticketId}`);
     return { success: true };
   }
 
@@ -617,6 +649,65 @@ class OrganizerCrudService {
 
   async deleteCampaign(campaignId: string): Promise<{ success: boolean; error?: string }> {
     return { success: true };
+  }
+  
+  // ADDED: Method to get speakers for a specific event
+  async getEventSpeakers(eventId: string): Promise<{ success: boolean; speakers?: Speaker[]; error?: string }> {
+    try {
+        const { data, error } = await supabase
+            .from('event_speakers')
+            .select('speakers(*)')
+            .eq('event_id', eventId);
+
+        if (error) throw error;
+        
+        const speakers = data.map((item: any) => ({
+            id: item.speakers.id,
+            name: item.speakers.name,
+            title: item.speakers.title,
+            company: item.speakers.company,
+            bio: item.speakers.bio,
+            imageUrl: item.speakers.image_url
+        }));
+        
+        return { success: true, speakers };
+    } catch (error) {
+        console.error("Error fetching speakers:", error);
+        return { success: false, error: 'Failed to fetch speakers' };
+    }
+  }
+
+  // ADDED: Method to get sponsors for a specific event
+  async getEventSponsors(eventId: string): Promise<{ success: boolean; sponsors?: Sponsor[]; error?: string }> {
+      try {
+        const { data, error } = await supabase
+            .from('event_sponsors')
+            .select('sponsors(*)')
+            .eq('event_id', eventId);
+        
+        if (error) throw error;
+
+        const sponsors = data.map((item: any) => ({
+            id: item.sponsors.id,
+            name: item.sponsors.name,
+            logoUrl: item.sponsors.logo_url,
+            website: item.sponsors.website_url,
+            tier: item.sponsors.tier
+        }));
+
+        return { success: true, sponsors };
+    } catch (error) {
+        console.error("Error fetching sponsors:", error);
+        return { success: false, error: 'Failed to fetch sponsors' };
+    }
+  }
+
+  // ADDED: Mock method to get schedule for a specific event
+  async getEventSchedule(eventId: string): Promise<{ success: boolean; schedule?: ScheduleItem[]; error?: string }> {
+    // This is a mock implementation as the schedule table/logic isn't fully built out.
+    // In a real app, you would fetch this from a 'schedule_items' table.
+    console.log(`Fetching schedule for event ${eventId} (mock)`);
+    return new Promise(resolve => setTimeout(() => resolve({ success: true, schedule: [] }), 200));
   }
 }
 
