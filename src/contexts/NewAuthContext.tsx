@@ -47,7 +47,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             .from('user_profiles')
             .select('*')
             .eq('id', session.user.id)
-            .single();
+            .maybeSingle();
           
           // **THE CRITICAL FIX IS HERE**
           // If there's an error fetching the profile OR if the profile is null,
@@ -86,30 +86,39 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     getInitialSession();
 
     // This listener handles subsequent auth changes (login, logout).
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       console.log('Auth state change event:', event);
-      
-      if (event === 'SIGNED_IN' && session?.user) {
-        setLoading(true);
-        const { data: userProfile, error: profileError } = await supabase
-          .from('user_profiles')
-          .select('*')
-          .eq('id', session.user.id)
-          .single();
 
-        if (profileError || !userProfile) {
+      if (event === 'SIGNED_IN' && session?.user) {
+        // Use async IIFE to avoid deadlock
+        (async () => {
+          setLoading(true);
+          const { data: userProfile, error: profileError } = await supabase
+            .from('user_profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .maybeSingle();
+
+          if (profileError || !userProfile) {
             console.error('Profile fetch failed on SIGNED_IN. Logging out.');
             await supabase.auth.signOut();
-        } else {
+            setProfile(null);
+            setUser(null);
+            setSession(null);
+          } else {
             setProfile(userProfile);
             setUser(session.user);
             setSession(session);
-        }
-        setLoading(false);
+          }
+          setLoading(false);
+        })();
       } else if (event === 'SIGNED_OUT') {
         setProfile(null);
         setUser(null);
         setSession(null);
+      } else if (event === 'TOKEN_REFRESHED' && session) {
+        setSession(session);
+        setUser(session.user);
       }
     });
 

@@ -63,7 +63,7 @@ const UnifiedDashboard: React.FC = () => {
     return () => {
       organizerCrudService.removeEventListener(handleEventUpdate);
     };
-  }, [setBreadcrumbs]);
+  }, [setBreadcrumbs, user?.id]);
 
   const loadOrganizerEvents = async () => {
     if (!user?.id) return;
