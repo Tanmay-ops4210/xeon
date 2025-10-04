@@ -34,88 +34,83 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check for an active session when the application first loads
+    // This function runs once on app startup to check for an existing session.
     const getInitialSession = async () => {
       try {
         console.log('Checking initial session...');
         const { data: { session } } = await supabase.auth.getSession();
-        console.log('Initial session:', session?.user?.id);
         
         if (session?.user) {
-          // If a user is logged in, fetch their profile data
-          console.log('Fetching user profile for:', session.user.id);
+          // A user session exists. Now, we MUST verify their profile exists.
+          console.log('Session found. Fetching user profile for:', session.user.id);
           const { data: userProfile, error: profileError } = await supabase
             .from('user_profiles')
             .select('*')
             .eq('id', session.user.id)
             .single();
           
-          // --- THIS IS THE FIX ---
-          // If there's an error or no profile, the user state is inconsistent.
-          // Log them out to prevent an infinite loading loop.
+          // **THE CRITICAL FIX IS HERE**
+          // If there's an error fetching the profile OR if the profile is null,
+          // the user's state is inconsistent. We must log them out to prevent a stuck loading state.
           if (profileError || !userProfile) {
-            console.error('Profile not found or error fetching profile. Logging out.', profileError?.message);
+            console.error('Profile not found or error fetching profile. Forcing logout.', profileError?.message);
             await supabase.auth.signOut();
             setSession(null);
             setUser(null);
             setProfile(null);
           } else {
-            console.log('User profile loaded:', userProfile);
+            // SUCCESS! Both session and profile are valid. Set the state.
+            console.log('User profile loaded successfully:', userProfile);
             setSession(session);
             setUser(session.user);
             setProfile(userProfile);
           }
         } else {
-            // No user session found
+            // No user session found. Ensure all state is clear.
             setSession(null);
             setUser(null);
             setProfile(null);
         }
       } catch (error) {
-        console.error('Error getting initial session:', error);
-        // Ensure loading stops even on unexpected errors
+        console.error('Error during initial session check:', error);
+        // Ensure we clear state even on unexpected errors.
         setSession(null);
         setUser(null);
         setProfile(null);
       } finally {
+        // This is crucial: only set loading to false AFTER all checks are complete.
         setLoading(false);
       }
     };
 
     getInitialSession();
 
-    // Listen for auth state changes
+    // This listener handles subsequent auth changes (login, logout).
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth state change:', event, session?.user?.id);
+      console.log('Auth state change event:', event);
       
-      setSession(session);
-      setUser(session?.user ?? null);
-
-      if (session?.user) {
-        console.log('Auth state change - fetching profile for:', session.user.id);
-        
+      if (event === 'SIGNED_IN' && session?.user) {
+        setLoading(true);
         const { data: userProfile, error: profileError } = await supabase
           .from('user_profiles')
           .select('*')
           .eq('id', session.user.id)
           .single();
-        
-        if (profileError) {
-          console.error('Error fetching user profile after auth change:', profileError.message);
-          setProfile(null); // Clear profile on error
-        } else if (userProfile) {
-          console.log('Profile loaded after auth change:', userProfile);
-          setProfile(userProfile);
+
+        if (profileError || !userProfile) {
+            console.error('Profile fetch failed on SIGNED_IN. Logging out.');
+            await supabase.auth.signOut();
         } else {
-          console.warn('No user profile found after auth change for user:', session.user.id);
-          setProfile(null);
+            setProfile(userProfile);
+            setUser(session.user);
+            setSession(session);
         }
-      } else {
-        console.log('No session, clearing profile');
+        setLoading(false);
+      } else if (event === 'SIGNED_OUT') {
         setProfile(null);
+        setUser(null);
+        setSession(null);
       }
-      // Ensure loading is false after any auth change
-      setLoading(false);
     });
 
     return () => subscription.unsubscribe();
@@ -123,20 +118,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const login = async (email: string, password: string, role?: 'attendee' | 'organizer' | 'admin') => {
     try {
-      setLoading(true);
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
     } catch (error) {
       console.error('Login error:', error);
-      setLoading(false); // Stop loading on error
       throw error;
     }
-    // setLoading will be handled by onAuthStateChange
   };
 
   const register = async (email: string, password: string, fullName: string, role: 'attendee' | 'organizer' | 'admin', company?: string) => {
     try {
-      setLoading(true);
       console.log('Starting registration process...', { email, fullName, role });
       
       const { error } = await supabase.auth.signUp({ 
@@ -156,11 +147,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         throw error;
       }
       
-      console.log('Registration successful, waiting for auth state change...');
+      console.log('Registration successful, waiting for auth state change to fetch profile...');
       
     } catch (error) {
       console.error('Registration error:', error);
-      setLoading(false); // Stop loading on error
       throw error;
     }
   };
@@ -189,7 +179,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     user,
     profile,
     session,
-    isAuthenticated: !!user && !!profile, // Make sure both exist to be authenticated
+    isAuthenticated: !!user && !!profile, // User is only truly authenticated if they have a profile
     loading,
     login,
     register,
